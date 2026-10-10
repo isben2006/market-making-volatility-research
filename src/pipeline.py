@@ -144,7 +144,8 @@ def solve_fill_params():
 # 2. AS quote loop + fill rule
 # ---------------------------------------------------------------------------
 def run_as_sim(mid_1s, sell_min, buy_max, gamma, k, sigma, horizon_sec, clip_size, label,
-                fill_mode="trade_through", best_bid=None, best_ask=None, fill_A=None, fill_k=None, rng=None):
+                fill_mode="trade_through", best_bid=None, best_ask=None, fill_A=None, fill_k=None, rng=None,
+                uniforms=None, verbose=True):
     """fill_mode:
       "trade_through" (original, runs 1-2): a resting quote fills for certain
           the instant any print crosses it. No latency, no queue, no
@@ -157,6 +158,13 @@ def run_as_sim(mid_1s, sell_min, buy_max, gamma, k, sigma, horizon_sec, clip_siz
           not mid) -- the AS model's own fill-intensity assumption, applied
           against real trade-through events instead of a separate simulated
           arrival process, so real order flow still gates every fill.
+
+    uniforms: optional (n, 2) array of pre-drawn U(0,1) values for the bid
+      and ask fill draws at each second. Passing the same array to every
+      estimator gives them common random numbers: identical fill luck at
+      each second, so P&L differences between estimators aren't just
+      different draws. Without it, draws come from `rng` in the order fills
+      are attempted, which differs between estimators.
     """
     n = len(mid_1s)
     mid_vals = mid_1s.values
@@ -203,12 +211,14 @@ def run_as_sim(mid_1s, sell_min, buy_max, gamma, k, sigma, horizon_sec, clip_siz
             if trade_through_bid:
                 delta_bid = max(0.0, best_bid_vals[t] - b)
                 p_bid = 1.0 - math.exp(-fill_A * math.exp(-fill_k * delta_bid))
-                do_fill_bid = rng.random() < p_bid
+                u = uniforms[t, 0] if uniforms is not None else rng.random()
+                do_fill_bid = u < p_bid
                 opportunities_bid += 1
             if trade_through_ask:
                 delta_ask = max(0.0, a - best_ask_vals[t])
                 p_ask = 1.0 - math.exp(-fill_A * math.exp(-fill_k * delta_ask))
-                do_fill_ask = rng.random() < p_ask
+                u = uniforms[t, 1] if uniforms is not None else rng.random()
+                do_fill_ask = u < p_ask
                 opportunities_ask += 1
 
         if do_fill_bid:
@@ -230,6 +240,9 @@ def run_as_sim(mid_1s, sell_min, buy_max, gamma, k, sigma, horizon_sec, clip_siz
         "sigma": sigma_arr, "inventory": inventory, "cash": cash, "pnl": pnl_mtm,
         "filled_bid": filled_bid, "filled_ask": filled_ask,
     }, index=mid_1s.index)
+
+    if not verbose:
+        return out
 
     n_bid_fills, n_ask_fills = filled_bid.sum(), filled_ask.sum()
     ann_vol_equiv = sigma_arr / mid_vals * math.sqrt(SECONDS_PER_YEAR)  # for interpretability only
