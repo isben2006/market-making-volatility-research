@@ -31,21 +31,31 @@ AS loop / plotting, estimators.py for the realized-vol estimator used in run 3):
 
 Estimator comparison (realized vol vs. bipower variation vs. GARCH(1,1)) lives
 in compare_estimators.py, built after this skeleton was confirmed to work.
+
+Usage: python as_skeleton.py [--date YYYY-MM-DD]  (defaults to 2024-01-10, the
+day this was originally built against). Output filenames/titles for any other
+date are suffixed with that date so they don't collide with the original run.
 """
+import argparse
 import math
 
 import numpy as np
 
 from pipeline import (
     calibrate, load_book_1s, load_trade_fill_signals, plot_run, run_as_sim, solve_fill_params,
-    CLIP_SIZE, DAY_SECONDS, GAMMA_NAIVE, K, ROLLING_HORIZON_SEC, SIGMA_ANNUAL_GUESS,
+    CLIP_SIZE, DAY_SECONDS, DEFAULT_DATE, GAMMA_NAIVE, K, ROLLING_HORIZON_SEC, SIGMA_ANNUAL_GUESS,
 )
 from estimators import realized_vol
 
 
 def main():
-    mid_1s, bid_1s, ask_1s = load_book_1s()
-    sell_min, buy_max = load_trade_fill_signals(mid_1s.index)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--date", default=DEFAULT_DATE)
+    date = ap.parse_args().date
+    suffix = "" if date == DEFAULT_DATE else f"_{date}"
+
+    mid_1s, bid_1s, ask_1s = load_book_1s(date)
+    sell_min, buy_max = load_trade_fill_signals(mid_1s.index, date)
 
     sigma, gamma_rolling = calibrate(mid_1s)
     print(f"\n[params] sigma_annual guess={SIGMA_ANNUAL_GUESS:.0%} -> sigma={sigma:.4f} USD/sqrt(s)")
@@ -62,12 +72,14 @@ def main():
     # RUN 1: literal textbook AS, T = the whole day. Expected to misbehave.
     run1 = run_as_sim(mid_1s, sell_min, buy_max, gamma=GAMMA_NAIVE, k=K, sigma=sigma,
                        horizon_sec=DAY_SECONDS, clip_size=CLIP_SIZE, label="RUN 1: naive full-day horizon")
-    plot_run(run1, "RUN 1: naive full-day horizon (gamma=0.1, textbook)", "run1_naive", zoom_start="20:00:00")
+    plot_run(run1, "RUN 1: naive full-day horizon (gamma=0.1, textbook)", f"run1_naive{suffix}",
+              zoom_start="20:00:00", date=date)
 
     # RUN 2: rolling 5-minute horizon, gamma back-solved for a sane $ spread at BTC's price level.
     run2 = run_as_sim(mid_1s, sell_min, buy_max, gamma=gamma_rolling, k=K, sigma=sigma,
                        horizon_sec=ROLLING_HORIZON_SEC, clip_size=CLIP_SIZE, label="RUN 2: rolling 5min horizon")
-    plot_run(run2, "RUN 2: rolling 5min horizon (gamma back-solved)", "run2_rolling", zoom_start="12:00:00")
+    plot_run(run2, "RUN 2: rolling 5min horizon (gamma back-solved)", f"run2_rolling{suffix}",
+              zoom_start="12:00:00", date=date)
 
     # RUN 3: sigma changes from a constant guess to a causal rolling
     # realized-vol estimate, AND the fill rule changes from deterministic
@@ -88,7 +100,7 @@ def main():
                        label="RUN 3: causal realized-vol + fill-intensity model",
                        fill_mode="intensity", best_bid=bid_1s, best_ask=ask_1s, fill_A=fill_A, fill_k=fill_k)
     plot_run(run3, "RUN 3: causal realized-vol + fill-intensity model",
-              "run3_realized_vol", zoom_start="12:00:00")
+              f"run3_realized_vol{suffix}", zoom_start="12:00:00", date=date)
 
     print("\nDone. PNGs in output/.")
 

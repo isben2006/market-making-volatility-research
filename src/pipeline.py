@@ -18,7 +18,9 @@ OUT = ROOT / "output"
 OUT.mkdir(exist_ok=True)
 
 SYMBOL = "BTCUSDT"
-DATE = "2024-01-10"
+DEFAULT_DATE = "2024-01-10"  # the original day everything was built against; a `date` param is now threaded
+                             # through every function below instead of a module-level constant, so a second
+                             # day can be run without silently reusing this day's data/labels/filenames.
 
 # ---- AS parameters shared across every run (all guesses -- no walk-forward yet) --
 SIGMA_ANNUAL_GUESS = 0.55          # annualized BTC vol guess, as a return pct
@@ -62,12 +64,12 @@ plt.rcParams.update({
 # ---------------------------------------------------------------------------
 # 1. Load data
 # ---------------------------------------------------------------------------
-def load_book_1s():
+def load_book_1s(date: str):
     """mid_1s drives the AS quote formula (the model's fair-value reference).
     bid_1s/ask_1s are the REAL market touch, kept separately -- the fill-
     intensity model needs the actual distance from our quote to the real
     touch, not to the (potentially quite different) mid."""
-    path = RAW / f"{SYMBOL}-bookTicker-{DATE}.csv"
+    path = RAW / f"{SYMBOL}-bookTicker-{date}.csv"
     print(f"[load] {path.name}")
     df = pd.read_csv(
         path,
@@ -79,17 +81,17 @@ def load_book_1s():
     book = pd.DataFrame({"mid": df["mid"].values, "bid": df["best_bid_price"].values,
                           "ask": df["best_ask_price"].values}, index=ts).sort_index()
 
-    full_index = pd.date_range(f"{DATE} 00:00:00+00:00", periods=DAY_SECONDS, freq="1s")
+    full_index = pd.date_range(f"{date} 00:00:00+00:00", periods=DAY_SECONDS, freq="1s")
     book_1s = book.resample("1s").last().reindex(full_index).ffill().bfill()
     print(f"  -> {len(df):,} L1 updates resampled to {len(book_1s):,} 1s bars "
           f"(mid range {book_1s['mid'].min():.1f} - {book_1s['mid'].max():.1f})")
     return book_1s["mid"], book_1s["bid"], book_1s["ask"]
 
 
-def load_trade_fill_signals(index: pd.DatetimeIndex):
+def load_trade_fill_signals(index: pd.DatetimeIndex, date: str):
     """Per-second 'most aggressive print' in each direction, used by the
     trade-through fill rule. NaN where nothing traded that second."""
-    path = RAW / f"{SYMBOL}-aggTrades-{DATE}.csv"
+    path = RAW / f"{SYMBOL}-aggTrades-{date}.csv"
     print(f"[load] {path.name}")
     df = pd.read_csv(
         path,
@@ -248,17 +250,17 @@ def run_as_sim(mid_1s, sell_min, buy_max, gamma, k, sigma, horizon_sec, clip_siz
 # ---------------------------------------------------------------------------
 # 3. Plots
 # ---------------------------------------------------------------------------
-def plot_run(df: pd.DataFrame, label: str, slug: str, zoom_start: str, zoom_hours: float = 2.0):
-    tight_start = pd.Timestamp(f"{DATE} {zoom_start}+00:00") + pd.Timedelta(hours=zoom_hours / 2)
+def plot_run(df: pd.DataFrame, label: str, slug: str, zoom_start: str, date: str, zoom_hours: float = 2.0):
+    tight_start = pd.Timestamp(f"{date} {zoom_start}+00:00") + pd.Timedelta(hours=zoom_hours / 2)
     panels = [
         ("full_day", df),
-        (f"zoom_{zoom_start.replace(':', '')}", _zoom(df, zoom_start, zoom_hours)),
+        (f"zoom_{zoom_start.replace(':', '')}", _zoom(df, zoom_start, zoom_hours, date)),
         (f"tight_{tight_start.strftime('%H%M%S')}", df.loc[tight_start:tight_start + pd.Timedelta(minutes=12)]),
     ]
     for suffix, sub in panels:
         fig, axes = plt.subplots(4, 1, figsize=(11, 10), sharex=True,
                                   gridspec_kw={"height_ratios": [2, 1, 1, 1]})
-        fig.suptitle(f"AS skeleton -- {label}  ({SYMBOL} {DATE}, {suffix})", fontsize=11, color=PALETTE["ink"])
+        fig.suptitle(f"AS skeleton -- {label}  ({SYMBOL} {date}, {suffix})", fontsize=11, color=PALETTE["ink"])
 
         ax = axes[0]
         ax.plot(sub.index, sub["mid"], color=PALETTE["mid"], lw=0.9, label="mid")
@@ -304,7 +306,7 @@ def plot_run(df: pd.DataFrame, label: str, slug: str, zoom_start: str, zoom_hour
         print(f"  [plot] {out_path}")
 
 
-def _zoom(df, start, hours):
-    start_ts = pd.Timestamp(f"{DATE} {start}+00:00")
+def _zoom(df, start, hours, date):
+    start_ts = pd.Timestamp(f"{date} {start}+00:00")
     end_ts = start_ts + pd.Timedelta(hours=hours)
     return df.loc[start_ts:end_ts]

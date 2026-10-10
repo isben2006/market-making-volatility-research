@@ -20,7 +20,10 @@ pipeline.run_as_sim's fill_mode docstring.
 
 Run this after as_skeleton.py (needs its RUN 1/2 diagnostics to make sense of
 why gamma_rolling is calibrated the way it is).
+
+Usage: python compare_estimators.py [--date YYYY-MM-DD] (defaults to 2024-01-10).
 """
+import argparse
 import math
 
 import numpy as np
@@ -29,7 +32,7 @@ import matplotlib.pyplot as plt
 
 from pipeline import (
     calibrate, load_book_1s, load_trade_fill_signals, plot_run, run_as_sim, solve_fill_params,
-    CLIP_SIZE, K, OUT, PALETTE, ROLLING_HORIZON_SEC, SECONDS_PER_YEAR, SYMBOL, DATE,
+    CLIP_SIZE, DEFAULT_DATE, K, OUT, PALETTE, ROLLING_HORIZON_SEC, SECONDS_PER_YEAR, SYMBOL,
 )
 from estimators import realized_vol, bipower_vol, fit_garch_params, garch_vol
 
@@ -42,9 +45,9 @@ def ann_vol(sigma_t, mid_1s):
     return sigma_t / mid_1s.values * math.sqrt(SECONDS_PER_YEAR)
 
 
-def comparison_plot(results: dict, sigma_guess: float, mid_1s: pd.Series):
+def comparison_plot(results: dict, sigma_guess: float, mid_1s: pd.Series, date: str, out_slug: str):
     fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True, gridspec_kw={"height_ratios": [1, 1]})
-    fig.suptitle(f"Estimator comparison -- RV vs BV vs GARCH(1,1)  ({SYMBOL} {DATE}, same gamma/k/horizon)",
+    fig.suptitle(f"Estimator comparison -- RV vs BV vs GARCH(1,1)  ({SYMBOL} {date}, same gamma/k/horizon)",
                  fontsize=11, color=PALETTE["ink"])
 
     ax = axes[0]
@@ -75,7 +78,7 @@ def comparison_plot(results: dict, sigma_guess: float, mid_1s: pd.Series):
 
     fig.autofmt_xdate()
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    out_path = OUT / "estimator_comparison.png"
+    out_path = OUT / f"{out_slug}.png"
     fig.savefig(out_path, dpi=130)
     plt.close(fig)
     print(f"\n[plot] {out_path}")
@@ -100,8 +103,13 @@ def print_summary_table(results: dict, mid_1s: pd.Series):
 
 
 def main():
-    mid_1s, bid_1s, ask_1s = load_book_1s()
-    sell_min, buy_max = load_trade_fill_signals(mid_1s.index)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--date", default=DEFAULT_DATE)
+    date = ap.parse_args().date
+    suffix = "" if date == DEFAULT_DATE else f"_{date}"
+
+    mid_1s, bid_1s, ask_1s = load_book_1s(date)
+    sell_min, buy_max = load_trade_fill_signals(mid_1s.index, date)
     sigma_guess, gamma_rolling = calibrate(mid_1s)
     fill_A, fill_k = solve_fill_params()
 
@@ -118,10 +126,10 @@ def main():
                          horizon_sec=ROLLING_HORIZON_SEC, clip_size=CLIP_SIZE,
                          label=f"{name} (same gamma/horizon, fill-intensity model)",
                          fill_mode="intensity", best_bid=bid_1s, best_ask=ask_1s, fill_A=fill_A, fill_k=fill_k)
-        plot_run(df, f"estimator={name}", f"cmp_{name.lower()}", zoom_start="12:00:00")
+        plot_run(df, f"estimator={name}", f"cmp_{name.lower()}{suffix}", zoom_start="12:00:00", date=date)
         results[name] = df
 
-    comparison_plot(results, sigma_guess, mid_1s)
+    comparison_plot(results, sigma_guess, mid_1s, date, out_slug=f"estimator_comparison{suffix}")
     print_summary_table(results, mid_1s)
     print("\nDone. PNGs in output/.")
 
