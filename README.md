@@ -203,6 +203,40 @@ forecasting literature's ranking doesn't carry over to market making.
 Chart: `output/walkforward_event/regime_comparison_matched_conservative_fee0.png`.
 Summaries for each variant: `output/walkforward_event/summary_*.csv`.
 
+**4. Robustness** (`robustness_event.py`, `analyze_robustness.py`): the 41
+days rerun under six variations, each changing one thing (conservative
+fills, level-matched sigma, no fees):
+
+| Setting | RV P&L/day at γ=1e-3 | Estimator vs RV, 36 comparisons: \|t\| ≥ 2 / Bonferroni-significant | Typical difference vs RV level |
+|---|---|---|---|
+| base (100 ms, 50 ms latency, k refit hourly) | −$151 | 4 / 0 | 4.9% |
+| k fit once per day (burn-in) | −$171 | 3 / 0 | 5.3% |
+| k constant (0.46/$) | −$189 | 2 / 0 | 3.0% |
+| 250 ms decisions | −$132 | 3 / 0 | 2.7% |
+| 1 s decisions | −$117 | 0 / 0 | 4.9% |
+| 10 ms latency | −$139 | 4 / 0 | 6.1% |
+| 200 ms latency | −$165 | 2 / 0 | 4.2% |
+
+- **AS loses money in every setting, at every gamma.** Slower requoting
+  loses less, simply because it trades less: with 1 s decisions, fills drop
+  ~40–45% at the two lowest gammas.
+- **Fixing k doesn't reveal estimator differences.** Hourly k carries
+  volatility information of its own, so it could have masked differences
+  between sigma estimators. With k constant, differences are smaller (3%
+  typical), not larger.
+- **Across 252 estimator comparisons, none survive a multiple-testing
+  correction.** The 0–4 nominal hits per setting are about what chance
+  gives (~2).
+- **Day-level risk metrics** (max drawdown, P&L to mean absolute inventory,
+  Sharpe-style ratio of 5-minute P&L): none survive the correction either.
+  One weak tendency: every nominally significant result for GARCH on P&L to
+  inventory and on the Sharpe-style ratio (10 of 10) points to GARCH doing
+  slightly *worse* than RV, by about 4–10%. All settings reuse the same 41
+  days, so this consistency isn't independent confirmation; treat it as a
+  tendency, not a finding.
+
+Summaries: `output/robustness_event/summary_*.csv`.
+
 > **Superseded P&L results (2026-10-12).** Every P&L number below, and in
 > the "Earlier findings" section, came from a simulator with a lookahead bug.
 > Each second's quote used that second's *last* mid and was then filled by
@@ -376,18 +410,18 @@ Where the walk-forward contradicts them, that's noted.
   artifact.
 
 That question was resolved by calibrating `k` from data and sweeping
-gamma: see "Main result: event-driven walk-forward". Remaining:
+gamma; the robustness checks and risk metrics are done too (see "Main
+result"). Remaining:
 
-1. **Validate the fill bounds against real queue-position fills.** Use
-   Tardis.dev's free first-of-month Binance futures L2 data (about 10 days in
-   our window): rebuild the book, simulate fills with true queue position,
-   and check that the result falls between our two bounds.
-2. **Robustness:** decision interval (100 ms vs 250 ms and 1 s), latency,
-   the 3h training window, and a fixed-k variant (k shares volatility
-   information with sigma).
-3. **Risk metrics** alongside P&L (drawdown, inventory variance), as
-   Falces Marín et al. report.
-4. Writing the paper.
+1. **Writing the paper** (`paper/`).
+2. Optional: a **Tardis L2 check** on the free first-of-month days. Our two
+   fill bounds already cover every possible queue position, so true
+   queue-position fills can only land between them; the check would only
+   place reality inside a range that's already 3–4% wide. That's a footnote,
+   not a result.
+3. Optional: the GARCH/HAR **training-window** sensitivity (3h trailing for
+   GARCH, expanding for HAR). This only changes sigma, and the main finding
+   is that sigma differences barely move P&L.
 
 The older plan below predates this finding:
 
@@ -418,5 +452,7 @@ python src/select_days.py
 python src/walkforward_event.py --workers 3
 python src/analyze_walkforward_event.py       # --rule optimistic | --fee-bps 2 | --variant raw
 python src/test_event_sim.py                  # fill-rule checks for the event simulator
+python src/robustness_event.py --workers 3    # ~35 min: k / decision-interval / latency variants
+python src/analyze_robustness.py
 # (walkforward.py / analyze_walkforward.py are the superseded 1-second-bar version)
 ```

@@ -176,10 +176,12 @@ def decision_sigma(sigma_sec: np.ndarray, dec_t: np.ndarray, lagged: bool) -> np
 
 def run_event_sim(iv: dict, trades: dict, mark_mid_1s: np.ndarray, sigma_dec: np.ndarray, optimistic: np.ndarray,
                   gamma: float, k: float, horizon_sec: int, clip_size: float, decision_ms: int,
-                  trace_run: int = None):
+                  trace_run: int = None, k_idx: np.ndarray = None):
     """B runs at once: sigma_dec (B, n_dec); optimistic (B,) bool picks each run's fill rule.
-    gamma: scalar or (B,) per run. k: scalar or (n_dec,) per decision (e.g.
-    from calibrate_k_walkforward).
+    gamma: scalar or (B,) per run. k: scalar, (n_dec,) per decision (e.g.
+    from calibrate_k_walkforward), or (n_dec, M) with k_idx (B,) choosing
+    column k_idx[j] for run j -- lets runs with different k series share one
+    pass over the data.
 
     Returns per-second arrays (DAY_SECONDS, B): pnl (marked to the mid at the
     end of each second), fills, notional, spread_sum, inv_abs_sum, plus
@@ -189,7 +191,13 @@ def run_event_sim(iv: dict, trades: dict, mark_mid_1s: np.ndarray, sigma_dec: np
     B, n_dec = sigma_dec.shape
     per_sec = 1000 // decision_ms
     gam = np.broadcast_to(np.asarray(gamma, dtype=float), (B,)).copy()
-    k_dec = np.broadcast_to(np.asarray(k, dtype=float), (n_dec,))
+    k_arr = np.asarray(k, dtype=float)
+    if k_arr.ndim == 2:
+        k_dec = np.ascontiguousarray(k_arr)
+        k_cols = np.asarray(k_idx)
+    else:
+        k_dec = np.broadcast_to(k_arr, (n_dec,))
+        k_cols = None
     sig2 = np.ascontiguousarray((sigma_dec ** 2).T)
     qmid, bid_arr, ask_arr = iv["quote_mid"], iv["bid_arrive"], iv["ask_arrive"]
     ask_min_in, bid_max_in, sell_min, buy_max = iv["ask_min_in"], iv["bid_max_in"], iv["sell_min"], iv["buy_max"]
@@ -206,7 +214,8 @@ def run_event_sim(iv: dict, trades: dict, mark_mid_1s: np.ndarray, sigma_dec: np
         tr = horizon_sec - ((kk * decision_ms / 1000.0) % horizon_sec)
         risk = gam * sig2[kk] * tr
         r = qmid[kk] - inv * risk
-        half = (risk + (2.0 / gam) * np.log1p(gam / k_dec[kk])) / 2.0
+        k_now = k_dec[kk] if k_cols is None else k_dec[kk][k_cols]
+        half = (risk + (2.0 / gam) * np.log1p(gam / k_now)) / 2.0
         b = np.floor((r - half) / TICK + EPS) * TICK
         a = np.ceil((r + half) / TICK - EPS) * TICK
         bid_ok = b < ask_arr[kk] - EPS  # post-only: a bid at or above the ask would cross

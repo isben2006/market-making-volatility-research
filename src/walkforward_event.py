@@ -55,16 +55,18 @@ WF_DIR = OUT / "walkforward_event"
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
-def process_day(date: str, keep_raw: bool) -> dict:
-    t_start = time.time()
+def load_day(date: str):
     for dt in ("bookTicker", "aggTrades"):
         download_and_extract(SYMBOL, date, dt, RAW)
-
     book, trades = load_events(date)
     index = pd.date_range(f"{date} 00:00:00+00:00", periods=DAY_SECONDS, freq="1s")
     mid = mid_1s_from_book(book, index)
-    sigma_guess, _ = calibrate(mid)
+    return book, trades, mid
 
+
+def build_sigmas(mid: pd.Series):
+    """Per-second sigma for every (variant, estimator), plus fit diagnostics."""
+    sigma_guess, _ = calibrate(mid)
     raw = {
         "RV": realized_vol(mid, ROLLING_HORIZON_SEC, sigma_guess),
         "EWMA": ewma_vol(mid, ewma_lambda_matching_window(ROLLING_HORIZON_SEC), sigma_guess),
@@ -74,27 +76,25 @@ def process_day(date: str, keep_raw: bool) -> dict:
     sigmas = {("raw", e): raw[e] for e in ESTIMATORS}
     for e in ESTIMATORS:
         sigmas[("matched", e)] = level_match_walkforward(raw[e], mid, FIRST_FIT_SEC, REFIT_SEC, TRAIN_SEC)
-    keys = list(sigmas)
+    return sigmas, {**g_diag, **h_diag}
 
-    iv = prepare_intervals(book, trades, DECISION_MS, LATENCY_MS)
-    k_dec, k_fits = calibrate_k_walkforward(iv, DECISION_MS, FIRST_FIT_SEC, REFIT_SEC, TRAIN_SEC)
-    sig_dec = {key: decision_sigma(sigmas[key], iv["dec_t"], lagged=(key[1] != "GARCH")) for key in keys}
-    del book  # largest object; everything needed from it is in iv / mid
 
-    batch = [(v, e, rule, g) for (v, e) in keys for rule in RULES for g in GAMMAS]
-    sim = run_event_sim(iv, trades, mid.values, np.vstack([sig_dec[(v, e)] for (v, e, _, _) in batch]),
-                        np.array([rule == "optimistic" for (_, _, rule, _) in batch]),
-                        np.array([g for (_, _, _, g) in batch]), k_dec, ROLLING_HORIZON_SEC, CLIP_SIZE,
-                        DECISION_MS)
-    pnl = sim["pnl"]
-    per_sec = sim["per_sec"]
+def decision_sigmas(sigmas: dict, dec_t: np.ndarray) -> dict:
+    # GARCH's value at second s already uses only returns up to s-1; the others include second s
+    return {key: decision_sigma(sigmas[key], dec_t, lagged=(key[1] != "GARCH")) for key in sigmas}
 
+
+def score_blocks(date: str, mid: pd.Series, sigmas: dict, sim: dict, labels: list, k_sec: np.ndarray) -> list:
+    """Per scored hour and run: P&L, fills, notional, spread, inventory, plus
+    the run's QLIKE and the hour's market features. labels[j] is a dict of
+    fields for run j and must include 'variant' and 'estimator'."""
+    pnl, per_sec = sim["pnl"], sim["per_sec"]
     mid_v = mid.values
     r2 = pd.Series(np.r_[0.0, np.diff(np.log(mid_v)) ** 2])
     y = r2[::-1].rolling(ROLLING_HORIZON_SEC, min_periods=ROLLING_HORIZON_SEC).mean()[::-1].shift(-1).values
+    keys = sorted({(lab["variant"], lab["estimator"]) for lab in labels})
     h = {key: (sigmas[key] / mid_v) ** 2 for key in keys}
     r60 = np.diff(np.log(mid_v[::FEATURE_SAMPLING_SEC]))
-    k_sec = k_dec[::per_sec]
 
     rows = []
     for start in range(FIRST_FIT_SEC, DAY_SECONDS, BLOCK_SEC):
@@ -122,17 +122,38 @@ def process_day(date: str, keep_raw: bool) -> dict:
         blk_pnl = pnl[end - 1] - pnl[start - 1]
         blk = {name: sim[name][start:end].sum(axis=0) for name in ["fills", "notional", "spread_sum", "inv_abs_sum"]}
         n_dec_blk = BLOCK_SEC * per_sec
-        for j, (v, e, rule, g) in enumerate(batch):
-            rows.append({**market, "variant": v, "estimator": e, "rule": rule, "gamma": g,
+        for j, lab in enumerate(labels):
+            rows.append({**market, **lab,
                          "pnl": blk_pnl[j], "fills": int(blk["fills"][j]), "notional": blk["notional"][j],
                          "spread_mean": blk["spread_sum"][j] / n_dec_blk,
-                         "inv_abs_mean": blk["inv_abs_sum"][j] / n_dec_blk, **fcst[(v, e)]})
+                         "inv_abs_mean": blk["inv_abs_sum"][j] / n_dec_blk,
+                         **fcst[(lab["variant"], lab["estimator"])]})
+    return rows
+
+
+def process_day(date: str, keep_raw: bool) -> dict:
+    t_start = time.time()
+    book, trades, mid = load_day(date)
+    sigmas, fit_diag = build_sigmas(mid)
+
+    iv = prepare_intervals(book, trades, DECISION_MS, LATENCY_MS)
+    k_dec, k_fits = calibrate_k_walkforward(iv, DECISION_MS, FIRST_FIT_SEC, REFIT_SEC, TRAIN_SEC)
+    sig_dec = decision_sigmas(sigmas, iv["dec_t"])
+    del book  # largest object; everything needed from it is in iv / mid
+
+    batch = [(v, e, rule, g) for (v, e) in sigmas for rule in RULES for g in GAMMAS]
+    sim = run_event_sim(iv, trades, mid.values, np.vstack([sig_dec[(v, e)] for (v, e, _, _) in batch]),
+                        np.array([rule == "optimistic" for (_, _, rule, _) in batch]),
+                        np.array([g for (_, _, _, g) in batch]), k_dec, ROLLING_HORIZON_SEC, CLIP_SIZE,
+                        DECISION_MS)
+    labels = [{"variant": v, "estimator": e, "rule": rule, "gamma": g} for (v, e, rule, g) in batch]
+    rows = score_blocks(date, mid, sigmas, sim, labels, k_dec[::sim["per_sec"]])
 
     WF_DIR.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(WF_DIR / f"blocks_{date}.csv", index=False)
     diag = {"date": date, "seconds": round(time.time() - t_start, 1), "k_median": float(np.median(k_fits[:, 1])),
             "k_min": float(k_fits[:, 1].min()), "k_max": float(k_fits[:, 1].max()),
-            "rejected_mean": float(sim["rejected"].mean()), **g_diag, **h_diag}
+            "rejected_mean": float(sim["rejected"].mean()), **fit_diag}
     (WF_DIR / f"diag_{date}.json").write_text(json.dumps(diag))
 
     if not keep_raw and date not in KEEP_RAW:

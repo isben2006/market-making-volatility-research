@@ -1,0 +1,8 @@
+config,comparisons,|t|>=2,Bonferroni-significant,out of MCS,median |diff| / |RV level|
+base,36,4,0,3,4.9%
+k_fixed,36,3,0,1,5.3%
+k_const,36,2,0,3,3.0%
+d250,36,3,0,2,2.7%
+d1000,36,0,0,0,4.9%
+lat10,36,4,0,3,6.1%
+lat200,36,2,0,2,4.2%
