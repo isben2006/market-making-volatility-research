@@ -45,11 +45,11 @@ def units(b: pd.DataFrame, fee_bps: float) -> pd.DataFrame:
     return u
 
 
-def paired(u: pd.DataFrame, metric: str, regime: str):
-    """Paired difference of each estimator vs RV across days, within one regime."""
+def paired(u: pd.DataFrame, metric: str, regime: str, names: list = ESTIMATORS):
+    """Paired difference of each of `names` vs RV across days, within one regime."""
     wide = u[u["regime"] == regime].pivot(index="date", columns="estimator", values=metric)
     res = {}
-    for e in ESTIMATORS:
+    for e in names:
         d = (wide[e] - wide["RV"]).dropna()
         se = d.std(ddof=1) / math.sqrt(len(d))
         better = (d < 0) if metric == "qlike" else (d > 0)

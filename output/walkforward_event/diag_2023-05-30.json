@@ -1,1 +1,1 @@
-{"date": "2023-05-30", "seconds": 42.0, "k_median": 0.4620721561150458, "k_min": 0.4331557209156432, "k_max": 0.5806911555016783, "rejected_mean": 1996.3125, "garch_fits": 21, "garch_failed": 0, "garch_persistence_mean": 0.9660796068223528, "har_fits": 21, "har_floored_s": 0}
+{"date": "2023-05-30", "seconds": 46.5, "k_median": 0.4620721561150458, "k_min": 0.4331557209156432, "k_max": 0.5806911555016783, "rejected_mean": 2007.2, "garch_fits": 21, "garch_failed": 0, "garch_persistence_mean": 0.9660796068223528, "har_fits": 21, "har_floored_s": 0}

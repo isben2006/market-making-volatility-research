@@ -14,8 +14,8 @@ from mmvol.config import (
 )
 from mmvol.data import download_and_extract, load_events, mid_1s_from_book
 from mmvol.estimators import (
-    ewma_lambda_matching_window, ewma_vol, garch_vol_walkforward, har_vol_walkforward, level_match_walkforward,
-    realized_vol, sigma_guess,
+    ewma_lambda_matching_window, ewma_vol, flat_vol_walkforward, garch_vol_walkforward, har_vol_walkforward,
+    level_match_walkforward, oracle_vol, realized_vol, sigma_guess,
 )
 from mmvol.simulator import decision_sigma
 
@@ -54,6 +54,12 @@ def build_sigmas(mid: pd.Series):
     for e in ESTIMATORS:
         sigmas[("matched", e)] = level_match_walkforward(raw[e], mid, FIRST_FIT_SEC, REFIT_SEC, TRAIN_SEC)
     return sigmas, {**g_diag, **h_diag}
+
+
+def build_benchmarks(mid: pd.Series) -> dict:
+    """Per-second sigma for the two benchmarks, keyed like build_sigmas."""
+    return {("benchmark", "Flat"): flat_vol_walkforward(mid, FIRST_FIT_SEC, REFIT_SEC, TRAIN_SEC),
+            ("benchmark", "Oracle"): oracle_vol(mid, ROLLING_HORIZON_SEC)}
 
 
 def decision_sigmas(sigmas: dict, dec_t: np.ndarray) -> dict:

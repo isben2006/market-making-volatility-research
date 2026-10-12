@@ -280,3 +280,29 @@ def level_match_walkforward(sigma_t: np.ndarray, mid_1s: pd.Series, first_fit_se
     fit_times = _refit_times(n, first_fit_sec, refit_sec)
     factors = np.array([math.sqrt(r2[T - train_sec:T].mean() / h[T - train_sec:T].mean()) for T in fit_times])
     return sigma_t * factors[_segment_index(n, fit_times)]
+
+
+# ---------------------------------------------------------------------------
+# Benchmarks. NOT estimators: they bracket the four real ones in the
+# walk-forward study and are kept out of their comparisons.
+#   Flat    no intra-hour dynamics: the trailing 3h realized vol, updated once
+#           an hour. Causal; the same level information the matched
+#           estimators get, without anything else.
+#   Oracle  perfect foresight of the realized vol over the next horizon_sec:
+#           the exact target QLIKE scores forecasts against. Not causal, so
+#           not tradable; it bounds what any sigma forecast could achieve.
+# ---------------------------------------------------------------------------
+def flat_vol_walkforward(mid_1s: pd.Series, first_fit_sec: int, refit_sec: int, train_sec: int) -> np.ndarray:
+    # level-matching a series with constant relative vol (sigma = mid) leaves
+    # exactly the trailing realized vol, held for each hour
+    return level_match_walkforward(mid_1s.values.astype(float), mid_1s, first_fit_sec, refit_sec, train_sec)
+
+
+def oracle_vol(mid_1s: pd.Series, horizon_sec: int) -> np.ndarray:
+    """Value at second s = realized variance of returns s+1..s+horizon_sec (the
+    QLIKE target). The simulator reads second s-1 for a decision in second s,
+    i.e. the next horizon_sec of returns from the current second on. The
+    window shrinks over the last horizon_sec of the day."""
+    r2 = _log_returns(mid_1s) ** 2
+    fwd = r2[::-1].rolling(horizon_sec, min_periods=1).mean()[::-1].shift(-1).ffill()
+    return mid_1s.values * np.sqrt(fwd.values)

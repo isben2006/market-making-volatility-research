@@ -25,4 +25,5 @@ REGIME_LOOKBACK_SEC = 3 * 3600   # regime signal: realized vol over the trailing
 FEATURE_SAMPLING_SEC = 60        # ...from 60s returns (1s RV's bias varies by regime; see the signature plot)
 ESTIMATORS = ["RV", "EWMA", "GARCH", "HAR"]
 VARIANTS = ["raw", "matched"]
+BENCHMARKS = ["Flat", "Oracle"]  # bracket the estimators (no dynamics / perfect foresight); variant "benchmark"
 KEEP_RAW = {"2024-01-10", "2023-07-19"}  # development days: raw data kept on disk for the single-day scripts

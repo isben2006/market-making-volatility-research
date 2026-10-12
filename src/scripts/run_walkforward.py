@@ -4,10 +4,12 @@ The 41-day walk-forward study on the event-driven simulator.
 Per day:
   1. Download bookTicker + aggTrades, load raw events.
   2. Four estimators (RV, EWMA; GARCH and HAR refit hourly), raw and
-     level-matched (mmvol.walkforward.build_sigmas).
+     level-matched (mmvol.walkforward.build_sigmas), plus two benchmarks,
+     variant "benchmark": Flat (trailing 3h realized vol, updated hourly)
+     and Oracle (the realized vol of the next 5 minutes; not tradable).
   3. AS order-flow parameter k calibrated from the data, refit hourly on the
      trailing 3 hours. Shared by every estimator, so only sigma varies.
-  4. Simulate every combination of estimator x variant x fill rule
+  4. Simulate every combination of estimator/benchmark x variant x fill rule
      (conservative / optimistic) x gamma in one batch: decisions every
      100 ms, 50 ms latency, tick rounding, post-only quotes. Deterministic.
   5. Score hours 03:00-24:00 separately: P&L, fills, notional (for fees
@@ -28,12 +30,13 @@ import pandas as pd
 from arch.utility.exceptions import ConvergenceWarning
 
 from mmvol.config import (
-    CLIP_SIZE, ESTIMATORS, FIRST_FIT_SEC, KEEP_RAW, OUT, RAW, REFIT_SEC, ROLLING_HORIZON_SEC, ROOT, SYMBOL,
-    TRAIN_SEC, VARIANTS,
+    BENCHMARKS, CLIP_SIZE, ESTIMATORS, FIRST_FIT_SEC, KEEP_RAW, OUT, RAW, REFIT_SEC, ROLLING_HORIZON_SEC, ROOT,
+    SYMBOL, TRAIN_SEC, VARIANTS,
 )
 from mmvol.simulator import calibrate_k_walkforward, prepare_intervals, run_event_sim
 from mmvol.walkforward import (
-    DECISION_MS, GAMMAS, LATENCY_MS, RULES, build_sigmas, decision_sigmas, load_day, score_blocks,
+    DECISION_MS, GAMMAS, LATENCY_MS, RULES, build_benchmarks, build_sigmas, decision_sigmas, load_day,
+    score_blocks,
 )
 
 WF_DIR = OUT / "walkforward_event"
@@ -45,6 +48,7 @@ def process_day(date: str, keep_raw: bool) -> dict:
     t_start = time.time()
     book, trades, mid = load_day(date)
     sigmas, fit_diag = build_sigmas(mid)
+    sigmas.update(build_benchmarks(mid))
 
     iv = prepare_intervals(book, trades, DECISION_MS, LATENCY_MS)
     k_dec, k_fits = calibrate_k_walkforward(iv, DECISION_MS, FIRST_FIT_SEC, REFIT_SEC, TRAIN_SEC)
@@ -82,9 +86,9 @@ def main():
 
     dates = args.dates or pd.read_csv(ROOT / "data" / "study_days.csv")["date"].tolist()
     todo = [d for d in dates if args.force or not (WF_DIR / f"blocks_{d}.csv").exists()]
+    n_runs = (len(ESTIMATORS) * len(VARIANTS) + len(BENCHMARKS)) * len(RULES) * len(GAMMAS)
     print(f"{len(dates)} days, {len(dates) - len(todo)} already done, {len(todo)} to run "
-          f"({args.workers} workers; {len(ESTIMATORS) * len(VARIANTS) * len(RULES) * len(GAMMAS)} runs/day)",
-          flush=True)
+          f"({args.workers} workers; {n_runs} runs/day)", flush=True)
 
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         futures = {pool.submit(process_day, d, args.keep_raw): d for d in todo}

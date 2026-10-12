@@ -11,6 +11,10 @@ Prints:
   3. The estimator comparison: P&L per unit vol, paired differences vs RV
      across days within each regime, Model Confidence Set, for each gamma
      under the chosen fill rule and fee.
+  4. Benchmarks: the estimators between Flat (no intra-hour dynamics) and
+     Oracle (perfect foresight of the next 5 minutes' realized vol), as
+     paired differences vs RV in USD per day. Oracle - RV bounds what any
+     better sigma forecast could add.
 
 Usage (from src/): python -m scripts.analyze_walkforward [--variant matched] [--rule conservative] [--fee-bps 0]
 """
@@ -132,6 +136,62 @@ def main():
                  f"{args.rule} fills, fee {args.fee_bps:g} bps; above 0 = earns more / loses less)", fontsize=10)
     fig.tight_layout(rect=[0, 0, 1, 0.92])
     out_png = WF_DIR / f"regime_comparison_{args.variant}_{args.rule}_fee{args.fee_bps:g}.png"
+    fig.savefig(out_png, dpi=130)
+    print(f"[plot] {out_png}")
+
+    if (blocks["variant"] == "benchmark").any():
+        benchmark_table(blocks, args.variant, args.rule, args.fee_bps)
+
+
+def benchmark_table(blocks: pd.DataFrame, variant: str, rule: str, fee_bps: float):
+    names = ["Flat", *ESTIMATORS, "Oracle"]
+    b = blocks[blocks["variant"].isin([variant, "benchmark"]) & (blocks["rule"] == rule)
+               & blocks["estimator"].isin(names)]
+    b = b[b["date"].isin(b.loc[b["variant"] == "benchmark", "date"].unique())]  # same days for every column
+    b = pd.concat([b, b.assign(regime="all")], ignore_index=True)  # "all": every scored hour of the day
+    print(f"\n=== 4. Benchmarks: P&L in USD per day vs RV ({variant} sigma, {rule} fills, fee {fee_bps:g} bps) ===")
+    print("Flat: trailing 3h realized vol, updated hourly. Oracle: realized vol of the next 5 minutes (not tradable).")
+    print(f"{b['date'].nunique()} days. Cells: mean paired difference vs RV, t-stat, days better. "
+          "Headroom (whole days only) = (Oracle - RV) / |RV|.")
+    rows, plot_rows = [], []
+    for g in sorted(b["gamma"].unique()):
+        u = units(b[b["gamma"] == g], fee_bps)
+        for regime in ["all", *REGIMES]:
+            res, _ = paired(u, "pnl", regime, names)
+            rv = res["RV"]["mean"]
+            for e in names:
+                r = res[e]
+                rows.append({"gamma": g, "regime": regime, "estimator": e, "days": r["n"], "pnl_mean": r["mean"],
+                             "diff_vs_rv": r["diff"], "se": r["se"], "t": r["t"], "days_better": r["better"]})
+            print(f"gamma {g:.0e}, {regime:>4}: RV {rv:+8.1f}/day | "
+                  + " | ".join(f"{e} {res[e]['diff']:+6.1f} (t={res[e]['t']:+.1f}, {res[e]['better']}/{res[e]['n']})"
+                               for e in names if e != "RV")
+                  + (f" | headroom {res['Oracle']['diff'] / abs(rv):+.0%}" if regime == "all" else ""))
+    out = pd.DataFrame(rows)
+    out_csv = WF_DIR / f"benchmarks_{variant}_{rule}_fee{fee_bps:g}.csv"
+    out.to_csv(out_csv, index=False, float_format="%.6g")
+    print(f"[csv] {out_csv}")
+
+    gammas = sorted(out["gamma"].unique())
+    fig, axes = plt.subplots(1, len(gammas), figsize=(3.4 * len(gammas), 4.2))
+    others = [e for e in names if e != "RV"]
+    for ax, g in zip(np.atleast_1d(axes), gammas):
+        s = out[(out["gamma"] == g) & (out["regime"] == "all")].set_index("estimator").loc[others]
+        x = np.arange(len(others))
+        for i, e in enumerate(others):
+            ax.errorbar(x[i], s.loc[e, "diff_vs_rv"], yerr=1.96 * s.loc[e, "se"], fmt="o", ms=5, capsize=3,
+                        color=EST_COLORS[e], lw=1.3)
+        ax.axhline(0, color=PALETTE["ink2"], lw=0.9)
+        ax.set_xticks(x)
+        ax.set_xticklabels(others, rotation=45, ha="right")
+        ax.set_title(f"gamma = {g:.0e}", fontsize=10)
+        for spine in ("top", "right"):
+            ax.spines[spine].set_visible(False)
+    np.atleast_1d(axes)[0].set_ylabel("P&L per day minus RV's, USD\n(mean across days, 95% CI)")
+    fig.suptitle(f"Estimators between the benchmarks: Flat (no dynamics) and Oracle (perfect foresight) "
+                 f"({SYMBOL}, {rule} fills, fee {fee_bps:g} bps; above 0 = loses less than RV)", fontsize=10)
+    fig.tight_layout(rect=[0, 0, 1, 0.92])
+    out_png = WF_DIR / f"benchmarks_{variant}_{rule}_fee{fee_bps:g}.png"
     fig.savefig(out_png, dpi=130)
     print(f"[plot] {out_png}")
 
