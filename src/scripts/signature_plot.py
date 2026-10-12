@@ -8,15 +8,16 @@ estimators (Bandi & Russell 2008; Hansen & Lunde 2006).
 Each interval uses the subsampled average over all grid offsets, so coarse
 intervals don't throw away data.
 
-Usage: python signature_plot.py --dates 2024-01-10 2023-07-19
+Usage (from src/): python -m scripts.signature_plot --dates 2024-01-10 2023-07-19
 """
 import argparse
 import math
 
-import matplotlib.pyplot as plt
 import numpy as np
 
-from pipeline import OUT, PALETTE, SYMBOL, load_book_1s
+from mmvol.config import OUT, SYMBOL
+from mmvol.data import load_book_1s
+from mmvol.plotting import PALETTE, plt
 
 INTERVALS_SEC = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300]
 DAYS_PER_YEAR = 365

@@ -32,7 +32,7 @@ AS loop / plotting, estimators.py for the realized-vol estimator used in run 3):
 Estimator comparison (realized vol vs. bipower variation vs. GARCH(1,1)) lives
 in compare_estimators.py, built after this skeleton was confirmed to work.
 
-Usage: python as_skeleton.py [--date YYYY-MM-DD]  (defaults to 2024-01-10, the
+Usage (from src/): python -m legacy.as_skeleton [--date YYYY-MM-DD]  (defaults to 2024-01-10, the
 day this was originally built against). Output filenames/titles for any other
 date are suffixed with that date so they don't collide with the original run.
 """
@@ -41,11 +41,11 @@ import math
 
 import numpy as np
 
-from pipeline import (
+from legacy.pipeline_1s import (
     calibrate, load_book_1s, load_trade_fill_signals, plot_run, run_as_sim, solve_fill_params,
     CLIP_SIZE, DAY_SECONDS, DEFAULT_DATE, GAMMA_NAIVE, K, ROLLING_HORIZON_SEC, SIGMA_ANNUAL_GUESS,
 )
-from estimators import realized_vol
+from mmvol.estimators import realized_vol
 
 
 def main():

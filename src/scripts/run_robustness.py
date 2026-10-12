@@ -1,5 +1,5 @@
 """
-Robustness checks for the event-driven walk-forward (walkforward_event.py).
+Robustness checks for the walk-forward study (scripts/run_walkforward.py).
 
 Same 41 days, regimes, estimators and gammas, level-matched sigma and the
 conservative fill rule only (the optimistic bound and raw sigma were shown
@@ -22,7 +22,7 @@ the main run, plus a `config` column) and days_<date>.csv (per run risk
 metrics over the scored part of the day: max drawdown, P&L to mean absolute
 inventory, a Sharpe-style ratio of 5-minute P&L changes).
 
-Usage: python robustness_event.py [--workers 3] [--dates ...] [--force]
+Usage (from src/): python -m scripts.run_robustness [--workers 3] [--dates ...] [--force]
 """
 import argparse
 import math
@@ -34,10 +34,12 @@ import numpy as np
 import pandas as pd
 from arch.utility.exceptions import ConvergenceWarning
 
-from event_sim import calibrate_k_walkforward, prepare_intervals, run_event_sim
-from pipeline import CLIP_SIZE, DAY_SECONDS, OUT, RAW, ROLLING_HORIZON_SEC, ROOT, SYMBOL
-from walkforward import ESTIMATORS, FIRST_FIT_SEC, KEEP_RAW, REFIT_SEC, TRAIN_SEC
-from walkforward_event import GAMMAS, build_sigmas, decision_sigmas, load_day, score_blocks
+from mmvol.config import (
+    CLIP_SIZE, DAY_SECONDS, ESTIMATORS, FIRST_FIT_SEC, KEEP_RAW, OUT, RAW, REFIT_SEC, ROLLING_HORIZON_SEC, ROOT,
+    SYMBOL, TRAIN_SEC,
+)
+from mmvol.simulator import calibrate_k_walkforward, prepare_intervals, run_event_sim
+from mmvol.walkforward import GAMMAS, build_sigmas, decision_sigmas, load_day, score_blocks
 
 K_CONST = 0.46
 RB_DIR = OUT / "robustness_event"

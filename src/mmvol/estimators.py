@@ -13,6 +13,14 @@ import math
 import numpy as np
 import pandas as pd
 
+from mmvol.config import SECONDS_PER_YEAR, SIGMA_ANNUAL_GUESS
+
+
+def sigma_guess(mid_1s: pd.Series) -> float:
+    """Fallback sigma (USD/sqrt(second)) from SIGMA_ANNUAL_GUESS at the day's
+    opening price, used until an estimator has any return history."""
+    return SIGMA_ANNUAL_GUESS * mid_1s.iloc[0] / math.sqrt(SECONDS_PER_YEAR)
+
 
 def _log_returns(mid_1s: pd.Series) -> pd.Series:
     return np.log(mid_1s / mid_1s.shift(1)).fillna(0.0)  # first bar: no prior price, no info

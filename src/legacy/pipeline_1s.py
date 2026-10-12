@@ -1,35 +1,28 @@
 """
-Shared harness: data loading, the AS quote loop + trade-through fill rule, and
-plotting. Estimator-specific code lives in estimators.py; script entry points
-(as_skeleton.py, compare_estimators.py) import from both.
+LEGACY: the superseded 1-second-bar simulator. Its quotes use each second's
+last mid and are filled by trades from earlier in the same second (a
+lookahead that hides adverse selection), so its P&L results are invalid.
+Kept so the project history can be reproduced; the current simulator is
+mmvol/simulator.py.
+
+Contains the 1-second AS quote loop and fill rules, the per-second trade
+loader, the guessed calibration constants, and per-run plotting.
 """
 import math
-from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent.parent
-RAW = ROOT / "data" / "raw"
-OUT = ROOT / "output"
-OUT.mkdir(exist_ok=True)
+from mmvol.config import (  # noqa: F401  (re-exported for the other legacy scripts)
+    CLIP_SIZE, DAY_SECONDS, DEFAULT_DATE, OUT, RAW, ROLLING_HORIZON_SEC, ROOT, SECONDS_PER_YEAR,
+    SIGMA_ANNUAL_GUESS, SYMBOL,
+)
+from mmvol.data import load_book_1s  # noqa: F401
+from mmvol.plotting import PALETTE, plt
 
-SYMBOL = "BTCUSDT"
-DEFAULT_DATE = "2024-01-10"  # the original day everything was built against; a `date` param is now threaded
-                             # through every function below instead of a module-level constant, so a second
-                             # day can be run without silently reusing this day's data/labels/filenames.
-
-# ---- AS parameters shared across every run (all guesses -- no walk-forward yet) --
-SIGMA_ANNUAL_GUESS = 0.55          # annualized BTC vol guess, as a return pct
+# ---- guessed AS parameters, before k was calibrated from data ----------------
 GAMMA_NAIVE = 0.1                  # risk aversion, straight from the AS(2008) worked example
 K = 1.5                            # order-flow decay param, also straight from the AS(2008) example
-CLIP_SIZE = 0.005                  # BTC per fill, fixed lot size
-
-DAY_SECONDS = 86_400
-ROLLING_HORIZON_SEC = 300          # requoting horizon resets every 5 minutes (everything but run 1 uses this)
 TARGET_MAX_SPREAD_USD = 8.0        # gamma is back-solved to hit roughly this $ spread at max time-remaining
 
 # ---- fill-intensity model (replaces deterministic trade-through) -----------
@@ -46,48 +39,10 @@ TARGET_TOUCH_FILL_PROB = 0.90      # guessed P(fill this second) if resting exac
 TARGET_FILL_DECAY_USD = 5.0        # guessed $ depth at which that probability has decayed to ~10%
 FILL_RNG_SEED = 7                  # fixed seed -- fills are now stochastic, so results must be reproducible
 
-SECONDS_PER_YEAR = 365 * 24 * 3600
-
-PALETTE = dict(mid="#2a78d6", bid="#1baf7a", ask="#eb6834", series="#2a78d6",
-               grid="#e1e0d9", axis="#c3c2b7", ink="#0b0b0b", ink2="#52514e")
-
-plt.rcParams.update({
-    "figure.facecolor": "#fcfcfb", "axes.facecolor": "#fcfcfb",
-    "axes.edgecolor": PALETTE["axis"], "axes.grid": True,
-    "grid.color": PALETTE["grid"], "grid.linewidth": 0.7,
-    "text.color": PALETTE["ink"], "axes.labelcolor": PALETTE["ink2"],
-    "xtick.color": PALETTE["ink2"], "ytick.color": PALETTE["ink2"],
-    "axes.titlecolor": PALETTE["ink"], "font.size": 10,
-})
-
 
 # ---------------------------------------------------------------------------
-# 1. Load data
+# 1. Load data (per-second book: mmvol.data.load_book_1s)
 # ---------------------------------------------------------------------------
-def load_book_1s(date: str):
-    """mid_1s drives the AS quote formula (the model's fair-value reference).
-    bid_1s/ask_1s are the REAL market touch, kept separately -- the fill-
-    intensity model needs the actual distance from our quote to the real
-    touch, not to the (potentially quite different) mid."""
-    path = RAW / f"{SYMBOL}-bookTicker-{date}.csv"
-    print(f"[load] {path.name}")
-    df = pd.read_csv(
-        path,
-        usecols=["best_bid_price", "best_ask_price", "transaction_time"],
-        dtype={"best_bid_price": "float64", "best_ask_price": "float64", "transaction_time": "int64"},
-    )
-    df["mid"] = (df["best_bid_price"] + df["best_ask_price"]) / 2.0
-    ts = pd.to_datetime(df["transaction_time"], unit="ms", utc=True)
-    book = pd.DataFrame({"mid": df["mid"].values, "bid": df["best_bid_price"].values,
-                          "ask": df["best_ask_price"].values}, index=ts).sort_index()
-
-    full_index = pd.date_range(f"{date} 00:00:00+00:00", periods=DAY_SECONDS, freq="1s")
-    book_1s = book.resample("1s").last().reindex(full_index).ffill().bfill()
-    print(f"  -> {len(df):,} L1 updates resampled to {len(book_1s):,} 1s bars "
-          f"(mid range {book_1s['mid'].min():.1f} - {book_1s['mid'].max():.1f})")
-    return book_1s["mid"], book_1s["bid"], book_1s["ask"]
-
-
 def load_trade_fill_signals(index: pd.DatetimeIndex, date: str):
     """Per-second 'most aggressive print' in each direction, used by the
     trade-through fill rule. NaN where nothing traded that second."""

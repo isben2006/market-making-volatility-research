@@ -13,15 +13,14 @@ Per config:
     style ratio of 5-minute P&L changes): paired differences vs RV across
     days for each gamma, with the same Bonferroni threshold.
 
-Usage: python analyze_robustness.py
+Usage (from src/): python -m scripts.analyze_robustness
 """
 import numpy as np
 import pandas as pd
 from scipy import stats
 
-from analyze_walkforward import ESTIMATORS, REGIMES, label_regimes
-from analyze_walkforward_event import mcs_set, paired, units
-from pipeline import OUT
+from mmvol.analysis import REGIMES, label_regimes, mcs_set, paired, units
+from mmvol.config import ESTIMATORS, OUT
 
 RB_DIR = OUT / "robustness_event"
 CONFIG_ORDER = ["base", "k_fixed", "k_const", "d250", "d1000", "lat10", "lat200"]
@@ -31,7 +30,7 @@ ALPHA = 0.05
 def load(prefix: str) -> pd.DataFrame:
     files = sorted(RB_DIR.glob(f"{prefix}_*.csv"))
     if not files:
-        raise SystemExit(f"no {prefix} files in {RB_DIR}; run robustness_event.py first")
+        raise SystemExit(f"no {prefix} files in {RB_DIR}; run scripts.run_robustness first")
     return pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
 
 

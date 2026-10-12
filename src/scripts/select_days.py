@@ -9,10 +9,10 @@ including them would mix a liquidity regime into the volatility comparison.
 
 Using the full window's daily range here is fine: it only decides which days
 get sampled. Regime labels used in the analysis come from trailing intraday
-volatility, computed from past data only (see walkforward.py).
+volatility, computed from past data only (see mmvol/analysis.py).
 
 Output: data/study_days.csv
-Usage:  python select_days.py [--per-tercile 13] [--seed 7]
+Usage (from src/): python -m scripts.select_days [--per-tercile 13] [--seed 7]
 """
 import argparse
 import io
@@ -22,7 +22,7 @@ import zipfile
 import numpy as np
 import pandas as pd
 
-from pipeline import ROOT, SYMBOL
+from mmvol.config import ROOT, SYMBOL
 
 KLINES_URL = "https://data.binance.vision/data/futures/um/monthly/klines/{s}/1d/{s}-1d-{m}.zip"
 MONTHS = pd.period_range("2023-05", "2024-03", freq="M").astype(str)

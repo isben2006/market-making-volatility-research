@@ -44,7 +44,7 @@ Scores, all computed after the burn-in (GARCH/HAR are in-sample before it):
                Risk-adjusted and dimensionless.
   edge_bps     pnl_post / notional traded, in basis points.
 
-Usage: python compare_estimators.py [--date YYYY-MM-DD] [--seeds N]
+Usage (from src/): python -m legacy.compare_estimators [--date YYYY-MM-DD] [--seeds N]
 """
 import argparse
 import math
@@ -53,11 +53,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from pipeline import (
+from legacy.pipeline_1s import (
     calibrate, load_book_1s, load_trade_fill_signals, plot_run, run_as_sim, solve_fill_params,
     CLIP_SIZE, DEFAULT_DATE, K, OUT, PALETTE, ROLLING_HORIZON_SEC, SECONDS_PER_YEAR, SYMBOL,
 )
-from estimators import (
+from mmvol.estimators import (
     bipower_vol, ewma_lambda_matching_window, ewma_vol, fit_garch_params, fit_har_params,
     garch_vol, har_vol, realized_vol,
 )

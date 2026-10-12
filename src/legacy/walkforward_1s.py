@@ -22,7 +22,7 @@ Per day:
   5. Write output/walkforward/blocks_<date>.csv, delete the raw CSVs.
 
 Resumable: days with a results file are skipped unless --force.
-Usage: python walkforward.py [--workers 3] [--seeds 10] [--dates D1 D2 ...] [--force]
+Usage (from src/): python -m legacy.walkforward_1s [--workers 3] [--seeds 10] [--dates D1 D2 ...] [--force]
 """
 import argparse
 import json
@@ -35,12 +35,12 @@ import numpy as np
 import pandas as pd
 from arch.utility.exceptions import ConvergenceWarning
 
-from download_data import download_and_extract
-from estimators import (
+from mmvol.data import download_and_extract
+from mmvol.estimators import (
     ewma_lambda_matching_window, ewma_vol, garch_vol_walkforward, har_vol_walkforward,
     level_match_walkforward, realized_vol,
 )
-from pipeline import (
+from legacy.pipeline_1s import (
     CLIP_SIZE, K, OUT, RAW, ROLLING_HORIZON_SEC, ROOT, SYMBOL, calibrate, load_book_1s,
     load_trade_fill_signals, run_as_sim_batch, solve_fill_params,
 )

@@ -1,13 +1,13 @@
 """
-Hand-built checks of event_sim's fill rules. With sigma = 0, gamma = k = 1,
+Hand-built checks of the simulator's fill rules (mmvol/simulator.py). With sigma = 0, gamma = k = 1,
 the quotes are fixed around a 100.0 mid: bid 99.3, ask 100.7. Each decision
 interval gets one scripted event and we check what each fill rule does.
 
-Run: python test_event_sim.py
+Run (from src/): python -m tests.test_simulator
 """
 import numpy as np
 
-from event_sim import run_event_sim
+from mmvol.simulator import run_event_sim
 
 CLIP = 0.005
 INF = np.inf

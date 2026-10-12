@@ -1,31 +1,27 @@
 """
-Analyze the event-engine walk-forward (output/walkforward_event/blocks_*.csv).
+Analyze the walk-forward results (output/walkforward_event/blocks_*.csv).
 
-Same regime labels and inference unit as analyze_walkforward.py (trailing 3h
-vol terciles; day x regime), plus the dimensions the event engine adds:
-fill rule (conservative / optimistic bounds), gamma, and maker fees, which
-are applied here from the recorded notional (fee_bps per side traded).
+Regimes and the day x regime inference unit are described in mmvol.analysis.
+Fees are applied here from the recorded notional (fee_bps per side traded).
 
 Prints:
   1. AS economics: what an AS market maker earns at each gamma, gross and
      net of fees, under both fill bounds (RV, level-matched).
-  2. Forecast accuracy (QLIKE) by regime, unchanged in definition.
+  2. Forecast accuracy (QLIKE) by regime.
   3. The estimator comparison: P&L per unit vol, paired differences vs RV
      across days within each regime, Model Confidence Set, for each gamma
      under the chosen fill rule and fee.
 
-Usage: python analyze_walkforward_event.py [--variant matched] [--rule conservative] [--fee-bps 0]
+Usage (from src/): python -m scripts.analyze_walkforward [--variant matched] [--rule conservative] [--fee-bps 0]
 """
 import argparse
-import math
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from arch.bootstrap import MCS
 
-from analyze_walkforward import EST_COLORS, ESTIMATORS, REGIMES, label_regimes
-from pipeline import CLIP_SIZE, OUT, PALETTE, SYMBOL
+from mmvol.analysis import REGIMES, label_regimes, mcs_set, paired, units
+from mmvol.config import ESTIMATORS, OUT, SYMBOL
+from mmvol.plotting import EST_COLORS, PALETTE, plt
 
 WF_DIR = OUT / "walkforward_event"
 FEE_SCENARIOS_BPS = [0.0, 2.0]   # gross, and ~Binance's standard maker fee (check the 2023-24 schedule)
@@ -34,42 +30,8 @@ FEE_SCENARIOS_BPS = [0.0, 2.0]   # gross, and ~Binance's standard maker fee (che
 def load_blocks() -> pd.DataFrame:
     files = sorted(WF_DIR.glob("blocks_*.csv"))
     if not files:
-        raise SystemExit(f"no results in {WF_DIR}; run walkforward_event.py first")
+        raise SystemExit(f"no results in {WF_DIR}; run scripts.run_walkforward first")
     return pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
-
-
-def with_fees(b: pd.DataFrame, fee_bps: float) -> pd.Series:
-    return b["pnl"] - fee_bps * 1e-4 * b["notional"]
-
-
-def units(b: pd.DataFrame, fee_bps: float) -> pd.DataFrame:
-    """day x regime x estimator: summed P&L (net of fees), P&L per unit vol, mean QLIKE."""
-    b = b.assign(pnl_net=with_fees(b, fee_bps), dv2=b["dollar_vol"] ** 2)
-    u = (b.groupby(["date", "regime", "estimator"], observed=True)
-          .agg(pnl=("pnl_net", "sum"), dv2=("dv2", "sum"), qlike=("qlike", "mean"), notional=("notional", "sum"),
-               inv_abs=("inv_abs_mean", "mean"))
-          .reset_index())
-    u["pnl_per_vol"] = u["pnl"] / (CLIP_SIZE * np.sqrt(u["dv2"]))
-    return u
-
-
-def paired(u: pd.DataFrame, metric: str, regime: str):
-    wide = u[u["regime"] == regime].pivot(index="date", columns="estimator", values=metric)
-    res = {}
-    for e in ESTIMATORS:
-        d = (wide[e] - wide["RV"]).dropna()
-        se = d.std(ddof=1) / math.sqrt(len(d))
-        better = (d < 0) if metric == "qlike" else (d > 0)
-        res[e] = {"mean": wide[e].mean(), "median": wide[e].median(), "diff": d.mean(), "se": se,
-                  "t": d.mean() / se if e != "RV" and se > 0 else np.nan, "better": int(better.sum()), "n": len(d)}
-    return res, wide
-
-
-def mcs_set(wide: pd.DataFrame, sign: float) -> set:
-    losses = (sign * wide[ESTIMATORS]).dropna()
-    m = MCS(losses, size=0.10, reps=10000, block_size=1, method="R", seed=7)
-    m.compute()
-    return set(m.included)
 
 
 def economics_table(blocks: pd.DataFrame):

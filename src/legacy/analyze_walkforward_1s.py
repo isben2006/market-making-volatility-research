@@ -20,7 +20,7 @@ Tests, within each regime, across days:
     the set of estimators that can't be statistically distinguished from the
     best. Run on QLIKE, and on -pnl_per_vol as a loss.
 
-Usage: python analyze_walkforward.py [--variant matched]
+Usage (from src/): python -m legacy.analyze_walkforward_1s [--variant matched]
 """
 import argparse
 import math
@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 from arch.bootstrap import MCS
 
-from pipeline import CLIP_SIZE, OUT, PALETTE, SYMBOL
+from legacy.pipeline_1s import CLIP_SIZE, OUT, PALETTE, SYMBOL
 
 WF_DIR = OUT / "walkforward"
 REGIMES = ["low", "mid", "high"]

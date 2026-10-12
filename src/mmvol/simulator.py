@@ -1,7 +1,9 @@
 """
-Event-driven Avellaneda-Stoikov simulator on raw Binance L1 + trade events.
+Event-driven Avellaneda-Stoikov simulator on raw Binance L1 + trade events
+(loaded by mmvol.data.load_events).
 
-Replaces the 1-second-bar simulator in pipeline.py, which had two problems:
+Replaces the 1-second-bar simulator in legacy/pipeline_1s.py, which had two
+problems:
   1. Lookahead: each second's quote used that second's LAST mid, then got
      filled by trades from earlier in the same second. That hid adverse
      selection: fills were followed by favorable moves (+$2.57 per fill 10s
@@ -37,46 +39,11 @@ No randomness: the same inputs always give the same fills.
 import math
 
 import numpy as np
-import pandas as pd
 
-from pipeline import DAY_SECONDS, RAW, SYMBOL
+from mmvol.config import DAY_SECONDS
 
 TICK = 0.1
 EPS = 1e-6
-
-
-def load_events(date: str):
-    bt = pd.read_csv(RAW / f"{SYMBOL}-bookTicker-{date}.csv",
-                     usecols=["best_bid_price", "best_ask_price", "transaction_time"],
-                     dtype={"best_bid_price": "float64", "best_ask_price": "float64", "transaction_time": "int64"})
-    tr = pd.read_csv(RAW / f"{SYMBOL}-aggTrades-{date}.csv", usecols=["price", "quantity", "transact_time",
-                     "is_buyer_maker"], dtype={"price": "float64", "quantity": "float64", "transact_time": "int64"})
-    if tr["is_buyer_maker"].dtype != bool:
-        tr["is_buyer_maker"] = tr["is_buyer_maker"].astype(str).str.strip().str.lower().eq("true")
-
-    day0 = int(pd.Timestamp(f"{date} 00:00:00", tz="UTC").timestamp() * 1000)
-    bt_ts = bt["transaction_time"].values - day0
-    order = np.argsort(bt_ts, kind="stable")
-    book = {"ts": bt_ts[order], "bid": bt["best_bid_price"].values[order], "ask": bt["best_ask_price"].values[order]}
-
-    tr_ts = tr["transact_time"].values - day0
-    order = np.argsort(tr_ts, kind="stable")
-    tr = tr.iloc[order]
-    sell = tr["is_buyer_maker"].values  # buyer was resting => a seller hit the bid
-    trades = {
-        "sell_ts": tr_ts[order][sell], "sell_px": tr["price"].values[sell], "sell_qty": tr["quantity"].values[sell],
-        "buy_ts": tr_ts[order][~sell], "buy_px": tr["price"].values[~sell], "buy_qty": tr["quantity"].values[~sell],
-    }
-    return book, trades
-
-
-def mid_1s_from_book(book: dict, index: pd.DatetimeIndex) -> pd.Series:
-    """Last mid of each second (forward-filled, back-filled before the first
-    update): the same series pipeline.load_book_1s builds, without reading
-    the CSV a second time."""
-    ts = book["ts"]
-    last = np.clip(np.searchsorted(ts, (np.arange(DAY_SECONDS) + 1) * 1000, side="left") - 1, 0, len(ts) - 1)
-    return pd.Series((book["bid"][last] + book["ask"][last]) / 2.0, index=index)
 
 
 def _window_reduce(ts, values, edges, fn, empty):
