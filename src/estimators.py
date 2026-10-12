@@ -8,6 +8,8 @@ log-return variance) -- every estimator below follows that same last step,
 so they're comparable apples-to-apples; only how "per-second variance" gets
 estimated differs.
 """
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -167,3 +169,106 @@ def har_vol(mid_1s: pd.Series, coefs: np.ndarray, floor: float) -> np.ndarray:
         print(f"  [har] {n_floored} of {len(var)} forecasts were below the floor and were floored")
     var = np.maximum(var, floor)
     return mid_1s.values * np.sqrt(var)
+
+
+# ---------------------------------------------------------------------------
+# Walk-forward versions: refit every `refit_sec` on the trailing `train_sec`
+# of data, apply the new fit forward until the next refit. Before the first
+# refit time (the burn-in) the first fit is used in-sample; that stretch is
+# warm-up and isn't scored.
+# ---------------------------------------------------------------------------
+def _refit_times(n: int, first_fit_sec: int, refit_sec: int) -> np.ndarray:
+    return np.arange(first_fit_sec, n, refit_sec)
+
+
+def _segment_index(n: int, fit_times: np.ndarray) -> np.ndarray:
+    """For each second, the index of the fit in force (fit 0 also covers the burn-in)."""
+    seg = np.searchsorted(fit_times, np.arange(n), side="right") - 1
+    return np.maximum(seg, 0)
+
+
+def garch_vol_walkforward(mid_1s: pd.Series, first_fit_sec: int, refit_sec: int, train_sec: int):
+    import warnings
+    from arch import arch_model
+
+    r = _log_returns(mid_1s).values
+    n = len(r)
+    fit_times = _refit_times(n, first_fit_sec, refit_sec)
+    params = []  # (omega in raw-return units, alpha, beta) per fit
+    n_failed = 0
+    for T in fit_times:
+        window = r[T - train_sec:T]
+        scale = 1.0 / window.std()
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                res = arch_model(window * scale, mean="Zero", vol="Garch", p=1, q=1,
+                                 dist="normal", rescale=False).fit(disp="off")
+            ok = res.convergence_flag == 0
+        except Exception:
+            ok = False
+        if ok:
+            params.append((res.params["omega"] / scale**2, res.params["alpha[1]"], res.params["beta[1]"]))
+        else:
+            n_failed += 1
+            params.append(params[-1] if params else (0.0, 0.0, 1.0))  # keep the previous fit
+    params = np.array(params)
+    seg = _segment_index(n, fit_times)
+    omega, alpha, beta = params[seg, 0], params[seg, 1], params[seg, 2]
+
+    var = np.empty(n)
+    var[0] = np.mean(r[1:first_fit_sec] ** 2)  # empirical seed; see garch_vol for why not omega/(1-a-b)
+    r2 = r ** 2
+    for t in range(1, n):
+        var[t] = omega[t] + alpha[t] * r2[t - 1] + beta[t] * var[t - 1]
+    diag = {"garch_fits": len(fit_times), "garch_failed": n_failed,
+            "garch_persistence_mean": float(np.mean(params[:, 1] + params[:, 2]))}
+    return mid_1s.values * np.sqrt(np.clip(var, 0, None)), diag
+
+
+def har_vol_walkforward(mid_1s: pd.Series, horizon_sec: int, first_fit_sec: int, refit_sec: int,
+                        fit_step_sec: int = 10):
+    """Refit hourly on an EXPANDING window (all of the day so far), with
+    non-negative coefficients. A trailing 3h window, as used for GARCH, was
+    tried first and is unstable for HAR: 3 hours hold only ~6 independent
+    observations of the 30-minute component, and OLS produced negative
+    coefficients (down to -1.3) and negative variance forecasts on a calm day.
+    Corsi's HAR is normally fit on years of data; expanding is the closest
+    within-day equivalent. Non-negativity is a safety net: with an expanding
+    window, OLS and NNLS gave identical forecasts on both development days."""
+    from scipy.optimize import nnls
+
+    r2 = _log_returns(mid_1s) ** 2
+    X = _har_features(r2)
+    fwd = r2[::-1].rolling(horizon_sec, min_periods=horizon_sec).mean()[::-1].shift(-1).values
+    r2v = r2.values
+    n = len(r2v)
+    fit_times = _refit_times(n, first_fit_sec, refit_sec)
+    coefs, floors = [], []
+    for T in fit_times:
+        # targets must end by T, and the 30-min component needs 30 min of history
+        t_idx = np.arange(max(HAR_COMPONENTS_SEC), T - horizon_sec, fit_step_sec)
+        scale = 1.0 / r2v[:T].mean()  # NNLS is better conditioned on O(1) numbers than on ~1e-9 variances
+        c, _ = nnls(X[t_idx] * scale, fwd[t_idx] * scale)
+        coefs.append(c)
+        floors.append(0.01 * r2v[:T].mean())
+    coefs, floors = np.array(coefs), np.array(floors)
+    seg = _segment_index(n, fit_times)
+    var = np.einsum("ij,ij->i", X, coefs[seg])
+    n_floored = int((var < floors[seg]).sum())
+    var = np.maximum(var, floors[seg])
+    diag = {"har_fits": len(fit_times), "har_floored_s": n_floored}
+    return mid_1s.values * np.sqrt(var), diag
+
+
+def level_match_walkforward(sigma_t: np.ndarray, mid_1s: pd.Series, first_fit_sec: int, refit_sec: int,
+                            train_sec: int) -> np.ndarray:
+    """Rescale sigma_t piecewise so that, over each trailing training window,
+    its average variance equals the realized variance. Causal: the factor in
+    force from T onward uses data before T only."""
+    r2 = (_log_returns(mid_1s) ** 2).values
+    h = (sigma_t / mid_1s.values) ** 2
+    n = len(r2)
+    fit_times = _refit_times(n, first_fit_sec, refit_sec)
+    factors = np.array([math.sqrt(r2[T - train_sec:T].mean() / h[T - train_sec:T].mean()) for T in fit_times])
+    return sigma_t * factors[_segment_index(n, fit_times)]

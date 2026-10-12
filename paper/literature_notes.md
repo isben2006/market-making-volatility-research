@@ -19,6 +19,48 @@ What each reference is used for in the write-up. BibTeX keys refer to
 | `gueant2013` | from memory | Closed-form asymptotic quotes and the standard reference for calibrating `A` and `k`. Relevant when `k` is calibrated from `bookDepth`. |
 | `gueant2017` | from memory | General framework reconciling AS-style models; closed-form approximations. |
 | `stochvol_lob2016` | authors missing | AS extension with stochastic volatility. Motivates why a time-varying sigma estimate matters. |
+| `falcesmarin2022` | checked (full text and code read 2026-10-12) | Closest prior work: AS on BTC-USD with RL tuning gamma and skew. Details below. |
+
+**Falces Marín et al. (2022), what they do:**
+- **Data:** L2 order book updates plus trades, BTC-USD, 7 Dec 2020 to 8 Jan
+  2021, 12 hours a day. 30 test days. The exchange isn't named.
+- **Sigma:** variance of the mid over the last w ticks, with w=25 picked by
+  a genetic search to maximize Sharpe. That's a plain rolling-variance
+  estimator, with no comparison against alternatives. **Supports our gap:**
+  they treat sigma as a tuning parameter, not an estimation problem.
+- **k:** from order-book update arrival rates (Aldridge), so no A parameter.
+- **Fills**, from their code (github.com/javifalces/HFTFramework,
+  `OrderMatchEngine.java`), not the paper, which doesn't describe them:
+  - The full book is rebuilt from each L2 snapshot, and our order joins the
+    back of the queue at its price.
+  - Each real trade is replayed against the book: displayed depth at better
+    prices and ahead of us at our price is consumed first; only what's left
+    fills us, with partial fills.
+  - Fills also happen when a new snapshot crosses a resting order.
+  - Order latency is configurable (fixed or Poisson). Fees are an optional
+    switch, off in their documented examples.
+  - Caveat: the engine has commits up to April 2026, so this may not be
+    exactly the version that produced the 2022 results.
+- **Needs L2 depth we don't have** (Binance's free archive only has L1 for
+  futures): queue position comes from displayed depth at and in front of the
+  order's price.
+- **Every strategy they test loses money**, from their own Tables 2 and 5:
+  - **AS with genetically tuned parameters:** median daily Sharpe −0.26,
+    positive on 2 of 30 days. P&L-to-MAP is negative on 28 of 30 days.
+  - **Their best RL variant:** median Sharpe −0.09.
+  - **The two constant-spread baselines, which quote at the best price:**
+    median Sharpe −0.45 and −0.39.
+
+  They only compare models relative to each other. This supports our
+  finding: with realistic fills, AS loses to adverse selection on BTC even
+  with full L2 and queue modeling. It also shows that a relative comparison
+  (risk-adjusted, drawdown, P&L-to-inventory) is a publishable framing even
+  when absolute P&L is negative.
+- **Background to cite for the adverse-selection explanation** (from memory,
+  verify before citing):
+  - Glosten & Milgrom (1985), the adverse-selection theory of the spread.
+  - Cartea, Jaimungal & Penalva (2015), *Algorithmic and High-Frequency
+    Trading*: market making with adverse selection and short-term signals.
 
 **Gap to state in the paper:** no source found evaluates volatility
 estimators *inside* a market maker. The literature scores them on forecast
@@ -72,6 +114,15 @@ it, and pre-averaging in between.
 | Key | Status | Use in the paper |
 |---|---|---|
 | `patton2011` | from memory | QLIKE and MSE are robust loss functions when the volatility proxy is noisy. Use QLIKE to score forecast accuracy alongside P&L, which makes results comparable with the literature. |
+| `hln2011` | from memory | Model Confidence Set, used in `analyze_walkforward.py` (via `arch.bootstrap.MCS`, 10% level) to find the estimators statistically tied for best within each regime. |
+
+**Walk-forward result to discuss against `patton2011`:** QLIKE penalizes
+under-forecasts much more than over-forecasts. In high-vol hours GARCH and
+HAR over-forecast (median 1.18x and 1.22x realized), which QLIKE barely
+penalizes; they rank close to RV on QLIKE but earn 15–17% less, because
+over-forecasting widens the market maker's quotes and loses fills. So the
+literature's standard forecast loss doesn't match a market maker's economic
+loss. This is a candidate central point of the paper.
 
 ## 5. Crypto-specific evidence
 

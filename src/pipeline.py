@@ -260,6 +260,67 @@ def run_as_sim(mid_1s, sell_min, buy_max, gamma, k, sigma, horizon_sec, clip_siz
     return out
 
 
+def run_as_sim_batch(mid, sell_min, buy_max, best_bid, best_ask, sigma, uniforms, seed_idx,
+                      gamma, k, horizon_sec, clip_size, fill_A, fill_k, quote_mid=None):
+    """Same quote loop and fill-intensity model as run_as_sim(fill_mode=
+    "intensity", uniforms=...), but for B runs at once: one per row of
+    `sigma` (B, n). Row j uses uniforms[seed_idx[j]] (uniforms: (S, n, 2)),
+    so runs sharing a seed get common random numbers. Looping over time
+    once, with numpy over the batch, is ~100x faster than B scalar runs.
+
+    quote_mid: price the quotes are built around; defaults to `mid` (the last
+    mid of the same second, which is a lookahead: see causal_inputs). P&L is
+    always marked at `mid`.
+
+    Returns arrays laid out (n, B): pnl, bid, ask, filled_bid, filled_ask.
+    """
+    B, n = sigma.shape
+    quote_mid = mid if quote_mid is None else quote_mid
+    sig2 = np.ascontiguousarray((sigma ** 2).T)                    # (n, B)
+    u_bid = np.ascontiguousarray(uniforms[seed_idx, :, 0].T)       # (n, B)
+    u_ask = np.ascontiguousarray(uniforms[seed_idx, :, 1].T)
+    const = (2.0 / gamma) * math.log(1.0 + gamma / k)
+
+    pnl = np.empty((n, B))
+    bid = np.empty((n, B))
+    ask = np.empty((n, B))
+    filled_bid = np.zeros((n, B), dtype=bool)
+    filled_ask = np.zeros((n, B), dtype=bool)
+    inv = np.zeros(B)
+    cash = np.zeros(B)
+
+    for t in range(n):
+        tr = horizon_sec - (t % horizon_sec)
+        m = mid[t]
+        risk = gamma * sig2[t] * tr
+        r = quote_mid[t] - inv * risk
+        half = (risk + const) / 2.0
+        b = r - half
+        a = r + half
+
+        sm = sell_min[t]
+        if not np.isnan(sm):
+            delta = np.maximum(0.0, best_bid[t] - b)
+            fb = (sm <= b) & (u_bid[t] < 1.0 - np.exp(-fill_A * np.exp(-fill_k * delta)))
+            if fb.any():
+                inv += clip_size * fb
+                cash -= clip_size * b * fb
+                filled_bid[t] = fb
+        bx = buy_max[t]
+        if not np.isnan(bx):
+            delta = np.maximum(0.0, a - best_ask[t])
+            fa = (bx >= a) & (u_ask[t] < 1.0 - np.exp(-fill_A * np.exp(-fill_k * delta)))
+            if fa.any():
+                inv -= clip_size * fa
+                cash += clip_size * a * fa
+                filled_ask[t] = fa
+
+        bid[t], ask[t] = b, a
+        pnl[t] = cash + inv * m
+
+    return {"pnl": pnl, "bid": bid, "ask": ask, "filled_bid": filled_bid, "filled_ask": filled_ask}
+
+
 # ---------------------------------------------------------------------------
 # 3. Plots
 # ---------------------------------------------------------------------------

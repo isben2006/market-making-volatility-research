@@ -43,9 +43,14 @@ src/compare_estimators.py  all five estimators through the identical harness,
                             scored on P&L and on QLIKE forecast loss
 src/signature_plot.py      realized variance vs sampling interval
 src/download_data.py       pulls one day of bookTicker + aggTrades
+src/select_days.py         picks the 41 study days (stratified by daily range)
+src/walkforward.py         the multi-day study: per-hour results for every day
+src/analyze_walkforward.py regime labels, paired tests, Model Confidence Set
+data/study_days.csv        the 41 study days
 paper/references.bib       references for the write-up
 paper/literature_notes.md  what each reference is used for + verification status
 output/                    per-run charts, comparison charts, signature plot
+output/walkforward/        per-day results, summaries, regime chart
 requirements.txt
 ```
 
@@ -117,8 +122,162 @@ requirements.txt
      ratio** of 5-minute P&L changes, and **edge** per dollar traded.
    - writes every run to `output/results_<date>.csv`, ready for aggregation
      across days.
+9. **The walk-forward regime study** (`select_days.py`, `walkforward.py`,
+   `analyze_walkforward.py`):
+   - **Days:** 41 weekdays, stratified random sample across calm, mid and
+     volatile daily-range terciles, covering all 11 months of the data
+     window. Weekends are excluded because their much lower volume would
+     mix a liquidity regime into the volatility comparison.
+   - **Estimators:** RV, EWMA, GARCH, HAR (BV dropped), raw and
+     level-matched. GARCH refits hourly on the trailing 3 hours. HAR refits
+     hourly on the day so far with non-negative coefficients: a trailing 3h
+     window was unstable for HAR (negative coefficients and variance
+     forecasts, since 3 hours hold only ~6 independent observations of its
+     30-minute component). Level-matching factors are also re-estimated
+     hourly on the trailing 3 hours. These window choices were checked on
+     the two development days.
+   - **Simulation:** a batched simulator runs all 80 combinations
+     (4 estimators × 2 variants × 10 seeds) in one pass, with common random
+     numbers. It reproduces the original simulator exactly and is ~12x
+     faster; a day now takes ~20 seconds including the download.
+   - **Scoring:** each hour from 03:00 to 24:00 UTC is scored separately
+     (861 hours in total).
+   - **Regimes:** each hour is labeled low, mid or high by its *trailing*
+     3-hour realized vol (60s returns, data before the hour only), split
+     into terciles across all hours. Cutoffs: 29% and 46% annualized.
+   - **Inference:** the unit is day × regime, since hours within a day share
+     one price path and carry inventory over. Tests are paired differences
+     vs RV across days, plus the 10% Model Confidence Set (Hansen, Lunde &
+     Nason 2011).
 
-## Key findings so far
+## Main result: event-driven walk-forward (current)
+
+**Setup** (`walkforward_event.py`, `analyze_walkforward_event.py`):
+- Same 41 days, regimes and estimators as before, on the event-driven
+  simulator: 100 ms requoting, 50 ms latency, tick rounding, post-only
+  quotes.
+- AS's `k` is calibrated from the data every hour (λ(δ) = A·e^(−kδ) fits
+  with R² ≈ 0.98–0.995). It ranges from about 0.2 per dollar in volatile
+  hours to about 1.2 in calm ones.
+- Gamma is a grid: 1e-5, 1e-4, 1e-3, 1e-2.
+- Both fill bounds (conservative and optimistic), raw and level-matched
+  sigma, fees applied afterwards (0 and 2 bps).
+
+**1. Calibrated Avellaneda-Stoikov loses money on BTC perps at every gamma,
+under both fill bounds** (RV, level-matched, mean per day over 21 hours):
+
+| gamma | avg spread | fills/day | edge (bps of notional) | P&L/day, no fees | P&L/day, 2 bps fee | days positive |
+|---|---|---|---|---|---|---|
+| 1e-5 | $5.00 | 20,644 | −0.73 | −$348 | −$1,304 | 11/41 |
+| 1e-4 | $5.28 | 18,333 | −0.82 | −$342 | −$1,174 | 4/41 |
+| 1e-3 | $8.12 | 10,545 | −0.68 | −$151 | −$594 | 2/41 |
+| 1e-2 | $36.50 | 2,827 | −0.47 | −$25 | −$134 | 14/41 |
+
+The optimistic bound is within a few percent of the conservative one, so
+the losses don't depend on the unknown queue position. The cause is
+adverse selection: quotes are only filled when the price runs through them.
+This matches Falces Marín et al. (2022), whose genetically tuned AS has a
+negative Sharpe ratio on 28 of 30 BTC days even with full L2 data.
+
+**2. Forecast accuracy differs clearly between estimators** (unchanged from
+the earlier study, since it doesn't use the simulator). EWMA beats RV on
+30/32, 37/39 and 34/35 days in low, mid and high vol; HAR has the best
+median in low and mid vol.
+
+**3. But the volatility estimator barely changes market-making P&L.**
+- Without fees: 36 comparisons (3 estimators vs RV × 3 regimes × 4 gammas).
+  The median difference is ~5% of the loss level, only 2–5 reach |t| ≥ 2
+  (about what chance alone gives), none survive a multiple-testing
+  correction, and the signs flip between gammas.
+- The same holds under the optimistic bound and with raw sigma.
+- With a 2 bps fee more differences become significant, because fees charge
+  for *volume*. An estimator that over-forecasts quotes wider, trades less
+  and pays less in fees: GARCH in high vol at γ=1e-3, +5.1, t=4.4. That's a
+  trading-volume effect, not better forecasting.
+
+**Conclusion:** once fills are realistic, adverse selection dominates. Which
+volatility estimator an AS market maker uses is a second-order choice for
+P&L, even though the estimators differ clearly as forecasters. The
+forecasting literature's ranking doesn't carry over to market making.
+
+Chart: `output/walkforward_event/regime_comparison_matched_conservative_fee0.png`.
+Summaries for each variant: `output/walkforward_event/summary_*.csv`.
+
+> **Superseded P&L results (2026-10-12).** Every P&L number below, and in
+> the "Earlier findings" section, came from a simulator with a lookahead bug.
+> Each second's quote used that second's *last* mid and was then filled by
+> trades from *earlier* in the same second, which hid adverse selection.
+> Fills were followed by price moves in the market maker's favor (+$2.57 per
+> fill after 10s), which can't happen in a real market. With causal quotes,
+> every estimator loses money on both development days.
+>
+> The **forecast-accuracy (QLIKE) results stand**: they never used the
+> simulator. The P&L comparison is being redone with an event-driven
+> simulator (`src/event_sim.py`): 100 ms requoting, order latency, tick
+> rounding, post-only quotes, and conservative/optimistic fill bounds. See
+> "What's next".
+
+## Main result: 41-day walk-forward
+
+Level-matched sigma; the raw variant gives the same conclusions. QLIKE is
+forecast loss (lower is better). P&L is per unit of volatility (higher is
+better). "Beats RV" counts the days on which the estimator did better than
+RV. Chart: `output/walkforward/regime_comparison_matched.png`.
+
+**Forecast accuracy (median QLIKE across days):**
+
+| Regime (days) | RV | EWMA | GARCH | HAR |
+|---|---|---|---|---|
+| low (32) | 0.624 | 0.508, beats RV 30/32 | 0.500, 21/32 | **0.413**, 25/32 |
+| mid (39) | 0.296 | 0.268, 37/39 | 0.343, 24/39 | **0.261**, 28/39 |
+| high (35) | 0.245 | **0.224**, 34/35 | 0.248, 18/35 | 0.227, 21/35 |
+
+**Market-making P&L (per unit vol, paired difference vs RV, t-stat, days beating RV):**
+
+| Regime | RV level | EWMA | GARCH | HAR |
+|---|---|---|---|---|
+| low | 15.8 | −0.13 (t=−0.3), 15/32 | −0.18 (t=−0.2), 15/32 | −0.14 (t=−0.1), 15/32 |
+| mid | 16.0 | +0.13 (t=+0.5), 20/39 | −0.13 (t=−0.2), 17/39 | −0.63 (t=−0.7), 22/39 |
+| high | 15.5 | −0.23 (t=−1.0), 18/35 | **−2.57 (t=−4.4), 8/35** | **−2.30 (t=−2.5), 9/35** |
+
+1. **Better forecasts don't produce more market-making P&L.** EWMA and HAR
+   forecast better than RV in every regime; EWMA beats it on 30/32, 37/39
+   and 34/35 days. Yet in low and mid vol, no estimator's P&L differs from
+   RV's: the differences are within 4% of RV's P&L (mostly about 1%),
+   t-statistics are near zero, and win rates are near half. All four
+   estimators are in the Model Confidence Set.
+2. **In high vol, the sophisticated models earn *less*.** GARCH and HAR
+   trail RV by 16.5% and 14.8%, and are excluded from the Model Confidence
+   Set.
+   GARCH's gap (t=−4.4) survives a Bonferroni correction for the 18 tests;
+   HAR's (t=−2.5) doesn't on its own, but the Model Confidence Set excludes
+   both. The simple estimators, RV and EWMA, are statistically tied.
+3. **Mechanism:** in high-vol hours, GARCH and HAR over-forecast. Their
+   median forecast is 1.18x and 1.22x the realized variance, versus 1.01x
+   for RV and EWMA. High-vol hours tend to follow bursts, and volatility
+   then mean-reverts faster than these persistent models expect. Over-
+   forecasting widens quotes (average spread $9.24 and $10.57, vs $8.66 for
+   RV) and loses fills (456 and 426 per hour, vs 501). QLIKE barely notices,
+   because it penalizes under-forecasts much more than over-forecasts. The
+   market maker's loss is the opposite way round: over-forecasting costs it
+   volume. **The forecasting literature's loss function doesn't match the
+   market maker's economic loss.**
+4. **Volatility-normalized P&L is stable across regimes** (15.5–16.0 per
+   unit vol for RV), while RV's dollar P&L per hour roughly triples from low
+   to high vol ($2.91 → $8.57). So the normalization does its job.
+
+**Caveats:**
+- Regime is partly time of day. High-vol hours cluster at 14:00–18:00 UTC
+  (US session); low-vol hours at 04:00–09:00 UTC.
+- Fills are simulated, not real.
+- One asset and 41 days.
+- The refit windows were chosen on the two development days, which are part
+  of the 41.
+
+## Earlier findings (development days)
+
+These came from the two development days, before the walk-forward existed.
+Where the walk-forward contradicts them, that's noted.
 
 - A literal 24h AS horizon is unusable at BTC's price scale (see RUN 1).
 - Naive realized vol from raw 1-second returns is noisy: a single outlier
@@ -179,7 +338,9 @@ requirements.txt
 
   - **Calm day:** clear, significant differences, and the P&L ranking
     matches the forecast-accuracy ranking (GARCH ≈ HAR > EWMA > RV > BV).
-    Better forecasts make more money.
+    Better forecasts make more money. *The walk-forward contradicts this:
+    across 32 low-vol days there's no P&L difference. This was one day's
+    path.*
   - **Volatile day:** nothing significantly beats RV. Fill and inventory
     noise is large (paired std ~$30–48), so estimator differences mostly
     disappear inside it.
@@ -197,22 +358,50 @@ requirements.txt
 
 ## Status / what's next
 
-Still **two days** of data. The comparison is now fair: level-matched,
-multi-seed, with regime-comparable metrics. It suggests better forecasters
-make more money in calm conditions, while in volatile conditions the
-differences drown in fill and inventory noise. Two days can't establish
-that. Next:
+**Current state (2026-10-12):**
+- Found the lookahead bug described at the top of the main result.
+- Built `src/event_sim.py`, an event-driven simulator on raw L1 and trade
+  events. It's tested against hand-built fill scenarios in
+  `src/test_event_sim.py`.
+- With it, the AS market maker as currently parameterized loses money under
+  both fill bounds, even requoting every 100 ms:
 
-1. The walk-forward: many days across the ~10.5-month window, with regime
-   labels computed from past data only, and estimators compared within
-   each regime across days (Diebold-Mariano or Model Confidence Set for
-   QLIKE, paired tests for P&L). BV is dropped from these runs.
-2. Refit GARCH and HAR periodically (e.g. hourly on a trailing window)
-   instead of once per day; the volatile-day results suggest fit-once is a
-   real handicap.
-3. Robustness checks on the judgment-call parameters: the 300s window,
-   gamma, the fill-model targets, and the burn-in length.
+  | Day | Spread captured per fill | Markout 0.1s after fill | Markout 5s after fill |
+  |---|---|---|---|
+  | calm | $0.96 | −$1.00 | −$2.60 |
+  | volatile | $3.41 | −$2.17 | −$3.26 |
+
+  Its quotes sit $1–8 from a $0.10-wide market, so they only fill when
+  the price sweeps through them. That's adverse selection, not a timing
+  artifact.
+
+That question was resolved by calibrating `k` from data and sweeping
+gamma: see "Main result: event-driven walk-forward". Remaining:
+
+1. **Validate the fill bounds against real queue-position fills.** Use
+   Tardis.dev's free first-of-month Binance futures L2 data (about 10 days in
+   our window): rebuild the book, simulate fills with true queue position,
+   and check that the result falls between our two bounds.
+2. **Robustness:** decision interval (100 ms vs 250 ms and 1 s), latency,
+   the 3h training window, and a fixed-k variant (k shares volatility
+   information with sigma).
+3. **Risk metrics** alongside P&L (drawdown, inventory variance), as
+   Falces Marín et al. report.
+4. Writing the paper.
+
+The older plan below predates this finding:
+
+1. **Robustness checks** on the judgment-call parameters (the 300s window,
+   gamma, the fill-model targets, the 3h training window), and controlling
+   for time of day: compare estimators within the same UTC hours.
+2. **More days.** At ~20s per day, all 228 weekdays in the window take
+   about 30 minutes. That would add power, particularly in the high-vol
+   regime where the effect is.
+3. **An economic loss for forecasts.** Score forecasts with a loss shaped
+   like the market maker's (penalizing over-forecasts), to see whether it
+   ranks estimators the way P&L does.
 4. Calibrating `k` from `bookDepth` instead of guessing it.
+5. Writing the paper (`paper/`).
 
 ## Running it
 
@@ -223,4 +412,11 @@ python src/download_data.py --date 2023-07-19
 python src/as_skeleton.py               # add --date YYYY-MM-DD for any other day
 python src/compare_estimators.py --seeds 20     # add --date YYYY-MM-DD for any other day (~5 min/day)
 python src/signature_plot.py --dates 2024-01-10 2023-07-19
+
+# walk-forward study (~20 min; downloads each day, deletes its raw data after)
+python src/select_days.py
+python src/walkforward_event.py --workers 3
+python src/analyze_walkforward_event.py       # --rule optimistic | --fee-bps 2 | --variant raw
+python src/test_event_sim.py                  # fill-rule checks for the event simulator
+# (walkforward.py / analyze_walkforward.py are the superseded 1-second-bar version)
 ```
