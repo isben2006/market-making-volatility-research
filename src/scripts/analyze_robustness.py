@@ -42,7 +42,8 @@ def main():
     blocks, cuts = label_regimes(load("blocks"))
     days = load("days")
     n_days = blocks["date"].nunique()
-    print(f"{n_days} days; regime cutoffs {cuts[0]:.0%}, {cuts[1]:.0%}; conservative fills, level-matched sigma, no fees")
+    print(f"{n_days} days; regime cutoffs {cuts[0]:.0%}, {cuts[1]:.0%}; conservative fills, "
+          f"{'/'.join(blocks['variant'].unique())} sigma, no fees")
 
     econ_rows, cmp_rows, sig_rows, risk_rows = [], [], [], []
     for cfg in CONFIG_ORDER:

@@ -1,12 +1,13 @@
 """
 Robustness checks for the walk-forward study (scripts/run_walkforward.py).
 
-Same 41 days, regimes, estimators and gammas, level-matched sigma and the
-conservative fill rule only (the optimistic bound and raw sigma were shown
-to give the same conclusions). Each config changes one thing:
+Same 41 days, regimes, estimators and gammas, the main sigma variant
+(config.MAIN_VARIANT, raw) and the conservative fill rule only (the
+optimistic bound and level-matched sigma were shown to give the same
+conclusions). Each config changes one thing:
 
   base       100 ms decisions, 50 ms latency, k refit hourly. Should
-             reproduce the main run's conservative / level-matched results.
+             reproduce the main run's conservative results.
   k_fixed    k fit once per day on the 3h burn-in, then held fixed.
   k_const    k = K_CONST for every day and hour. K_CONST is the median of
              all hourly fits in the main run (so it uses the whole sample;
@@ -35,8 +36,8 @@ import pandas as pd
 from arch.utility.exceptions import ConvergenceWarning
 
 from mmvol.config import (
-    CLIP_SIZE, DAY_SECONDS, ESTIMATORS, FIRST_FIT_SEC, KEEP_RAW, OUT, RAW, REFIT_SEC, ROLLING_HORIZON_SEC, ROOT,
-    SYMBOL, TRAIN_SEC,
+    CLIP_SIZE, DAY_SECONDS, ESTIMATORS, FIRST_FIT_SEC, KEEP_RAW, MAIN_VARIANT, OUT, RAW, REFIT_SEC,
+    ROLLING_HORIZON_SEC, ROOT, SYMBOL, TRAIN_SEC,
 )
 from mmvol.simulator import calibrate_k_walkforward, prepare_intervals, run_event_sim
 from mmvol.walkforward import GAMMAS, build_sigmas, decision_sigmas, load_day, score_blocks
@@ -73,7 +74,7 @@ def process_day(date: str, keep_raw: bool) -> dict:
     t_start = time.time()
     book, trades, mid = load_day(date)
     sigmas, _ = build_sigmas(mid)
-    sigmas = {key: s for key, s in sigmas.items() if key[0] == "matched"}
+    sigmas = {key: s for key, s in sigmas.items() if key[0] == MAIN_VARIANT}
     ivs = {name: prepare_intervals(book, trades, d_ms, l_ms) for name, (d_ms, l_ms) in TIMING_CONFIGS.items()}
     del book
 
@@ -90,10 +91,10 @@ def process_day(date: str, keep_raw: bool) -> dict:
         else:
             batch = [(name, e, g) for e in ESTIMATORS for g in GAMMAS]
             k_idx, k_arg = None, k_hourly
-        sim = run_event_sim(iv, trades, mid.values, np.vstack([sig_dec[("matched", e)] for (_, e, _) in batch]),
+        sim = run_event_sim(iv, trades, mid.values, np.vstack([sig_dec[(MAIN_VARIANT, e)] for (_, e, _) in batch]),
                             np.zeros(len(batch), dtype=bool), np.array([g for (_, _, g) in batch]), k_arg,
                             ROLLING_HORIZON_SEC, CLIP_SIZE, d_ms, k_idx=k_idx)
-        labels = [{"config": cfg, "variant": "matched", "estimator": e, "gamma": g} for (cfg, e, g) in batch]
+        labels = [{"config": cfg, "variant": MAIN_VARIANT, "estimator": e, "gamma": g} for (cfg, e, g) in batch]
         block_rows += score_blocks(date, mid, sigmas, sim, labels, k_hourly[::sim["per_sec"]])
         day_rows += [{"date": date, **r} for r in day_risk(sim, labels)]
         del sim

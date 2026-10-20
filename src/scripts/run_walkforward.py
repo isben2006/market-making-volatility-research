@@ -4,9 +4,10 @@ The 41-day walk-forward study on the event-driven simulator.
 Per day:
   1. Download bookTicker + aggTrades, load raw events.
   2. Four estimators (RV, EWMA; GARCH and HAR refit hourly), raw and
-     level-matched (mmvol.walkforward.build_sigmas), plus two benchmarks,
-     variant "benchmark": Flat (trailing 3h realized vol, updated hourly)
-     and Oracle (the realized vol of the next 5 minutes; not tradable).
+     level-matched (mmvol.walkforward.build_sigmas), plus three benchmarks,
+     variant "benchmark": Flat (trailing 3h realized vol, updated hourly),
+     OracleHour (the current hour's realized vol, held flat) and Oracle (the
+     realized vol of the next 5 minutes). The oracles aren't tradable.
   3. AS order-flow parameter k calibrated from the data, refit hourly on the
      trailing 3 hours. Shared by every estimator, so only sigma varies.
   4. Simulate every combination of estimator/benchmark x variant x fill rule

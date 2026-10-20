@@ -6,17 +6,18 @@ Fees are applied here from the recorded notional (fee_bps per side traded).
 
 Prints:
   1. AS economics: what an AS market maker earns at each gamma, gross and
-     net of fees, under both fill bounds (RV, level-matched).
+     net of fees, under both fill bounds (RV, chosen variant).
   2. Forecast accuracy (QLIKE) by regime.
   3. The estimator comparison: P&L per unit vol, paired differences vs RV
      across days within each regime, Model Confidence Set, for each gamma
      under the chosen fill rule and fee.
   4. Benchmarks: the estimators between Flat (no intra-hour dynamics) and
-     Oracle (perfect foresight of the next 5 minutes' realized vol), as
-     paired differences vs RV in USD per day. Oracle - RV bounds what any
-     better sigma forecast could add.
+     Oracle (perfect foresight of the next 5 minutes' realized vol), with
+     OracleHour (the hour's realized vol, held flat) splitting the gap into
+     knowing the level vs knowing the timing. Paired differences vs RV in USD
+     per day. Oracle - RV bounds what any better sigma forecast could add.
 
-Usage (from src/): python -m scripts.analyze_walkforward [--variant matched] [--rule conservative] [--fee-bps 0]
+Usage (from src/): python -m scripts.analyze_walkforward [--variant raw] [--rule conservative] [--fee-bps 0]
 """
 import argparse
 
@@ -24,7 +25,7 @@ import numpy as np
 import pandas as pd
 
 from mmvol.analysis import REGIMES, label_regimes, mcs_set, paired, units
-from mmvol.config import ESTIMATORS, OUT, SYMBOL
+from mmvol.config import ESTIMATORS, MAIN_VARIANT, OUT, SYMBOL
 from mmvol.plotting import EST_COLORS, PALETTE, plt
 
 WF_DIR = OUT / "walkforward_event"
@@ -38,10 +39,10 @@ def load_blocks() -> pd.DataFrame:
     return pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
 
 
-def economics_table(blocks: pd.DataFrame):
-    rv = blocks[(blocks["variant"] == "matched") & (blocks["estimator"] == "RV")]
+def economics_table(blocks: pd.DataFrame, variant: str):
+    rv = blocks[(blocks["variant"] == variant) & (blocks["estimator"] == "RV")]
     n_days = rv["date"].nunique()
-    print(f"\n=== 1. AS economics (RV, level-matched; per day = sum over the 21 scored hours, mean of {n_days} days) ===")
+    print(f"\n=== 1. AS economics (RV, {variant} sigma; per day = sum over the 21 scored hours, mean of {n_days} days) ===")
     rows = []
     for (g, rule), grp in rv.groupby(["gamma", "rule"]):
         per_day = grp.groupby("date").agg(pnl=("pnl", "sum"), notional=("notional", "sum"), fills=("fills", "sum"),
@@ -59,7 +60,7 @@ def economics_table(blocks: pd.DataFrame):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--variant", default="matched", choices=["matched", "raw"])
+    ap.add_argument("--variant", default=MAIN_VARIANT, choices=["raw", "matched"])
     ap.add_argument("--rule", default="conservative", choices=["conservative", "optimistic"])
     ap.add_argument("--fee-bps", type=float, default=0.0)
     args = ap.parse_args()
@@ -67,7 +68,7 @@ def main():
     blocks, cuts = label_regimes(load_blocks())
     print(f"{blocks['date'].nunique()} days, {blocks.drop_duplicates(['date', 'hour']).shape[0]} scored hours; "
           f"regime cutoffs (trailing 3h vol): {cuts[0]:.0%}, {cuts[1]:.0%}")
-    economics_table(blocks)
+    economics_table(blocks, args.variant)
 
     sel = blocks[(blocks["variant"] == args.variant) & (blocks["rule"] == args.rule)]
 
@@ -144,13 +145,15 @@ def main():
 
 
 def benchmark_table(blocks: pd.DataFrame, variant: str, rule: str, fee_bps: float):
-    names = ["Flat", *ESTIMATORS, "Oracle"]
+    names = ["Flat", *ESTIMATORS, "OracleHour", "Oracle"]
     b = blocks[blocks["variant"].isin([variant, "benchmark"]) & (blocks["rule"] == rule)
                & blocks["estimator"].isin(names)]
-    b = b[b["date"].isin(b.loc[b["variant"] == "benchmark", "date"].unique())]  # same days for every column
+    full = b.groupby("date")["estimator"].nunique() == len(names)
+    b = b[b["date"].isin(full.index[full])]  # same days for every column
     b = pd.concat([b, b.assign(regime="all")], ignore_index=True)  # "all": every scored hour of the day
     print(f"\n=== 4. Benchmarks: P&L in USD per day vs RV ({variant} sigma, {rule} fills, fee {fee_bps:g} bps) ===")
-    print("Flat: trailing 3h realized vol, updated hourly. Oracle: realized vol of the next 5 minutes (not tradable).")
+    print("Flat: trailing 3h realized vol, updated hourly. OracleHour: this hour's realized vol, held flat. "
+          "Oracle: realized vol of the next 5 minutes. Oracles aren't tradable.")
     print(f"{b['date'].nunique()} days. Cells: mean paired difference vs RV, t-stat, days better. "
           "Headroom (whole days only) = (Oracle - RV) / |RV|.")
     rows, plot_rows = [], []

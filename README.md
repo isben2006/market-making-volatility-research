@@ -24,9 +24,15 @@ regime?**
    volatility on 30/32, 37/39 and 34/35 days in low, mid and high volatility.
 3. **But the estimator barely changes market-making P&L.** Across 252
    estimator comparisons (36 per setting, 7 settings), none survive a
-   multiple-testing correction, and typical differences are 3–6% of the
+   multiple-testing correction, and typical differences are 3–5% of the
    loss. The forecasting literature's ranking doesn't carry over to market
    making; adverse selection dominates.
+4. **Benchmarks show why.** At low risk aversion sigma barely enters the
+   quotes, and even perfect foresight of volatility is worth nothing. At
+   higher risk aversion a perfect forecast is worth $20–40 a day, mostly
+   from knowing the coming hour's volatility *level* rather than its
+   minute-to-minute timing. The four estimators differ mainly in that
+   timing, and none of them targets the hourly level.
 
 ## Data
 
@@ -57,11 +63,26 @@ All causal: the value in force at any moment uses only earlier data.
 | **GARCH(1,1)** | refit hourly on the trailing 3 hours | Standard conditional-variance benchmark (Hansen & Lunde 2005) |
 | **HAR-RV** | 1/5/30-minute components forecasting the next 5 minutes; refit hourly on the day so far, non-negative coefficients | Standard realized-vol forecasting benchmark (Corsi 2009); beats GARCH on Bitcoin in two recent studies |
 
-Each estimator also runs **level-matched**: rescaled every hour so that its
-average variance over the trailing 3 hours equals realized variance. An
-estimator that runs systematically low would otherwise quote tighter and
-"win" on volume rather than forecasting. The first 3 hours of each day are
-burn-in; scoring starts at 03:00 UTC.
+Each estimator's sigma goes straight into AS, unadjusted, so any level
+bias counts as part of that estimator's quality. (A variant rescaled every
+hour to the trailing 3-hour realized variance is kept as a robustness check:
+its factors are ~1, since all four estimators come from the same 1-second
+returns, and it gives the same conclusions.) The first 3 hours of each day
+are burn-in; scoring starts at 03:00 UTC.
+
+### Benchmarks
+
+Not estimators: they bracket the four, run through the same simulator, and
+are kept out of the estimator comparisons and the Model Confidence Set.
+
+| Benchmark | Sigma | Tradable? |
+|---|---|---|
+| **Flat** | trailing 3-hour realized vol, updated hourly, constant within the hour | yes |
+| **OracleHour** | the current hour's actual realized vol, constant within the hour | no |
+| **Oracle** | the actual realized vol of the next 5 minutes (QLIKE's target) | no |
+
+Flat → OracleHour is the value of knowing the hour's volatility level;
+OracleHour → Oracle is the value of also knowing its timing within the hour.
 
 ### Market maker
 
@@ -122,14 +143,18 @@ burn-in; scoring starts at 03:00 UTC.
 
 ### 1. AS economics
 
-RV, level-matched, mean per day over the 21 scored hours, 41 days:
+RV, mean per day over the 21 scored hours, 41 days:
 
 | γ | avg spread | fills/day | edge (bps of notional) | P&L/day, no fees | P&L/day, 2 bps fee | days positive |
 |---|---|---|---|---|---|---|
-| 1e-5 | $5.00 | 20,644 | −0.73 | −$348 | −$1,304 | 11/41 |
-| 1e-4 | $5.28 | 18,333 | −0.82 | −$342 | −$1,174 | 4/41 |
-| 1e-3 | $8.12 | 10,545 | −0.68 | −$151 | −$594 | 2/41 |
-| 1e-2 | $36.50 | 2,827 | −0.47 | −$25 | −$134 | 14/41 |
+| 1e-5 | $5.00 | 20,652 | −0.73 | −$350 | −$1,306 | 11/41 |
+| 1e-4 | $5.27 | 18,366 | −0.83 | −$344 | −$1,178 | 4/41 |
+| 1e-3 | $8.06 | 10,563 | −0.68 | −$151 | −$595 | 2/41 |
+| 1e-2 | $35.89 | 2,826 | −0.44 | −$24 | −$132 | 14/41 |
+
+Higher γ loses less mainly by trading less: going from 1e-5 to 1e-2 cuts
+fills by 86% and roughly halves the loss per fill, but never makes it
+positive.
 
 These are conservative-bound figures; the optimistic bound is within a few
 percent. The mechanism shows in fill markouts (how far the mid moves after a
@@ -140,46 +165,48 @@ volatile day: $3.41 captured, −$2.17 and −$3.26.
 
 ### 2. Forecast accuracy
 
-Median QLIKE across days (lower is better), level-matched, with the number
-of days each estimator beats RV:
+Median QLIKE across days (lower is better), with the number of days each
+estimator beats RV:
 
 | Regime (days) | RV | EWMA | GARCH | HAR |
 |---|---|---|---|---|
-| low (32) | 0.624 | 0.508, 30/32 | 0.503, 21/32 | **0.413**, 25/32 |
-| mid (39) | 0.296 | 0.268, 37/39 | 0.343, 24/39 | **0.261**, 28/39 |
-| high (35) | 0.245 | **0.224**, 34/35 | 0.248, 18/35 | 0.227, 21/35 |
+| low (32) | 0.622 | 0.502, 30/32 | 0.426, 25/32 | **0.383**, 27/32 |
+| mid (39) | 0.297 | 0.265, 37/39 | 0.301, 25/39 | **0.260**, 26/39 |
+| high (35) | 0.244 | 0.224, 34/35 | 0.256, 17/35 | **0.197**, 25/35 |
+
+HAR has the lowest median loss in every regime; EWMA beats RV most
+consistently.
 
 ### 3. Estimator vs market-making P&L
 
 36 comparisons per setting: 3 estimators vs RV × 3 regimes × 4 gammas.
 
 - **Without fees:**
-  - The median difference is ~5% of the loss level.
-  - Only 2–5 comparisons reach |t| ≥ 2, about what chance alone gives.
+  - The median difference is ~4.5% of the loss level.
+  - Only 3–5 comparisons reach |t| ≥ 2, about what chance alone gives.
   - None survive a Bonferroni correction.
   - Signs flip between gammas.
-  - The same holds under the optimistic bound and with raw sigma.
-- **With a 2 bps fee** more differences become significant, because fees
-  charge for volume. An estimator that over-forecasts quotes wider, trades
-  less and pays less in fees. That's a volume effect, not better
-  forecasting.
+  - The same holds under the optimistic bound and with level-matched sigma.
+- **With a 2 bps fee** 11 of 36 reach |t| ≥ 2 and one survives Bonferroni
+  (EWMA, γ = 1e-3, high volatility). Fees charge for volume: about half of
+  that EWMA gap is fees saved by trading less, and the gross difference
+  alone isn't significant.
 
-Chart: `output/walkforward_event/regime_comparison_matched_conservative_fee0.png`.
+Chart: `output/walkforward_event/regime_comparison_raw_conservative_fee0.png`.
 
 ### 4. Robustness (`src/scripts/run_robustness.py`, `src/scripts/analyze_robustness.py`)
 
-The 41 days rerun with one change each (conservative fills, level-matched,
-no fees):
+The 41 days rerun with one change each (conservative fills, no fees):
 
 | Setting | RV P&L/day at γ=1e-3 | Estimator vs RV: \|t\| ≥ 2 / Bonferroni-significant (of 36) | Typical difference vs RV |
 |---|---|---|---|
-| base (100 ms, 50 ms latency, k refit hourly) | −$151 | 4 / 0 | 4.9% |
-| k fit once per day | −$171 | 3 / 0 | 5.3% |
-| k constant (0.46/$) | −$189 | 2 / 0 | 3.0% |
-| 250 ms decisions | −$132 | 3 / 0 | 2.7% |
-| 1 s decisions | −$117 | 0 / 0 | 4.9% |
-| 10 ms latency | −$139 | 4 / 0 | 6.1% |
-| 200 ms latency | −$165 | 2 / 0 | 4.2% |
+| base (100 ms, 50 ms latency, k refit hourly) | −$151 | 5 / 0 | 4.5% |
+| k fit once per day | −$171 | 3 / 0 | 4.4% |
+| k constant (0.46/$) | −$189 | 4 / 0 | 3.5% |
+| 250 ms decisions | −$133 | 1 / 0 | 2.9% |
+| 1 s decisions | −$117 | 1 / 0 | 4.9% |
+| 10 ms latency | −$138 | 2 / 0 | 4.5% |
+| 200 ms latency | −$164 | 1 / 0 | 3.8% |
 
 - **AS loses money in every setting, at every gamma.** Slower requoting
   loses less only because it trades less.
@@ -188,10 +215,46 @@ no fees):
   them. With k constant, differences get smaller, not larger.
 - **Day-level risk metrics:** nothing survives the correction. One weak
   tendency: every nominally significant GARCH result on risk-adjusted P&L
-  (10 of 10) points to GARCH doing 4–10% worse than RV. All settings reuse
+  (7 of 7) points to GARCH doing 4–14% worse than RV. All settings reuse
   the same days, so that's a tendency, not a finding.
 
-### 5. Microstructure note: the signature plot
+### 5. Benchmarks: where the value of sigma is
+
+Whole-day P&L vs RV, $/day (t-stat), conservative fills, no fees, 41 days:
+
+| γ | RV level | Flat | EWMA | GARCH | HAR | OracleHour | Oracle |
+|---|---|---|---|---|---|---|---|
+| 1e-5 | −$350 | +33 (0.6) | −3 | −13 | +7 | −7 (−0.4) | +5 (0.3) |
+| 1e-4 | −$344 | −9 | +2 | −5 | −16 | +25 (1.7) | +41 (2.9) |
+| 1e-3 | −$151 | −44 (−2.3) | +6 | +3 | −10 | +5 (0.6) | +26 (2.4) |
+| 1e-2 | −$24 | −24 (−2.1) | −9 | −5 | −2 | +24 (3.9) | +21 (4.4) |
+
+Splitting the oracle's value (paired across days):
+
+| γ | level: OracleHour − Flat | timing: Oracle − OracleHour |
+|---|---|---|
+| 1e-5 | −40 (t=−0.7) | +12 (t=1.6) |
+| 1e-4 | +34 (t=1.5) | +16 (t=1.6) |
+| 1e-3 | +49 (t=3.3) | +20 (t=2.5) |
+| 1e-2 | +48 (t=3.1) | −3 (t=−0.6) |
+
+- **At γ = 1e-5 sigma barely enters the quotes.** The volatility term
+  γσ²τ is cents, so the spread is set by k, and even perfect foresight is
+  worth nothing.
+- **At higher γ a better sigma is worth $20–40 a day**, up to most of the
+  gross loss at γ = 1e-2. The real estimators capture none of it.
+- **Most of that value is the hourly level, not the timing.** The
+  estimators differ mainly in timing, which is why their differences don't
+  show up in P&L. None of them uses information that predicts the coming
+  hour's level (longer history, time of day).
+- **Sigma doesn't rescue AS.** The Oracle still loses money after fees.
+- The same pattern holds under the optimistic bound. Caveat: knowing an
+  hour's realized vol also tells you a spike is coming sometime that hour,
+  so some timing information leaks into OracleHour.
+
+Chart: `output/walkforward_event/benchmarks_raw_conservative_fee0.png`.
+
+### 6. Microstructure note: the signature plot
 
 The usual warning is that bid-ask bounce inflates realized volatility at
 very short sampling intervals. On Binance perp mid-quotes the opposite
@@ -220,9 +283,11 @@ history is in the git log.
   appeared to flip between calm and volatile regimes, with large t-stats.
   Over 41 days the effect disappeared: the t-stats only reflected
   fill-simulation noise on one fixed price path.
-- **An estimator's level can masquerade as skill.** One that runs low quotes
-  tighter, trades more, and can look better for that reason alone. Hence
-  level-matching.
+- **An estimator's level could masquerade as skill.** One that runs low
+  quotes tighter, trades more, and can look better for that reason alone.
+  A level-matched variant was built to control for it; the levels turned
+  out to agree (matching factors ~1), so the main results use the raw sigma
+  and level-matching is a robustness check.
 - **GARCH on 1-second data** fits as nearly integrated (α+β ≈ 1), which
   breaks the textbook long-run variance used to start the recursion
   (division by ~0). It's started from the empirical variance instead.
@@ -247,10 +312,23 @@ history is in the git log.
 - **Some settings were chosen on the two development days**, which are part
   of the 41: refit windows and the decision/latency baseline. The constant k
   for the robustness check uses the whole sample.
+- **The oracles are upper bounds,** not achievable targets.
 - **Fee levels are approximate:** 2 bps is Binance's standard maker fee;
   check the 2023–24 schedule.
 - **Inventory updates instantly** on a fill, so the market maker learns of
   its fills slightly earlier than it would in reality.
+
+## Future work
+
+- **Forecasting the hourly volatility level.** OracleHour suggests the
+  valuable input is the coming hour's volatility level, which none of the
+  four short-horizon estimators targets. An hourly HAR with time-of-day
+  seasonality (volatility rises reliably around the US open), used as the
+  level anchor under the existing estimators, would test how much of the
+  ~$50/day is achievable.
+- **Queue-aware fills** on L2 data, to place results within the
+  conservative / optimistic bracket.
+- **Other assets and venues.**
 
 ## Running it
 
@@ -261,9 +339,9 @@ pip install -r requirements.txt
 cd src
 
 python -m scripts.select_days                    # writes data/study_days.csv
-python -m scripts.run_walkforward --workers 3    # ~20 min: downloads each day, deletes raw data after
-python -m scripts.analyze_walkforward            # options: --rule optimistic | --fee-bps 2 | --variant raw
-python -m scripts.run_robustness --workers 3     # ~35 min
+python -m scripts.run_walkforward --workers 2    # 1-2 h, mostly downloads; deletes raw data after
+python -m scripts.analyze_walkforward            # options: --rule optimistic | --fee-bps 2 | --variant matched
+python -m scripts.run_robustness --workers 3     # 1-2 h
 python -m scripts.analyze_robustness
 python -m tests.test_simulator                   # fill-rule checks
 
@@ -280,7 +358,7 @@ src/
   mmvol/                      core library
     config.py                 paths, instrument, shared settings
     data.py                   Binance archive download and loaders
-    estimators.py             volatility estimators (causal)
+    estimators.py             volatility estimators (causal) and benchmarks
     simulator.py              event-driven simulator, k calibration
     walkforward.py            per-day pipeline: build estimators, score hours
     analysis.py               regime labels, paired tests, Model Confidence Set
@@ -288,7 +366,7 @@ src/
   scripts/                    entry points
     select_days.py            study-day sample
     run_walkforward.py        the 41-day study
-    analyze_walkforward.py    main results tables and chart
+    analyze_walkforward.py    main results tables, benchmarks, charts
     run_robustness.py         k / decision-interval / latency variants
     analyze_robustness.py     robustness summary
     signature_plot.py         RV vs sampling interval

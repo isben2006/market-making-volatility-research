@@ -288,9 +288,13 @@ def level_match_walkforward(sigma_t: np.ndarray, mid_1s: pd.Series, first_fit_se
 #   Flat    no intra-hour dynamics: the trailing 3h realized vol, updated once
 #           an hour. Causal; the same level information the matched
 #           estimators get, without anything else.
+#   OracleHour  knows the realized vol of the current clock hour, held flat
+#           within it: the right level, but not when the spikes come. Not
+#           causal. Flat -> OracleHour is the value of knowing the level.
 #   Oracle  perfect foresight of the realized vol over the next horizon_sec:
 #           the exact target QLIKE scores forecasts against. Not causal, so
 #           not tradable; it bounds what any sigma forecast could achieve.
+#           OracleHour -> Oracle is the value of knowing the timing.
 # ---------------------------------------------------------------------------
 def flat_vol_walkforward(mid_1s: pd.Series, first_fit_sec: int, refit_sec: int, train_sec: int) -> np.ndarray:
     # level-matching a series with constant relative vol (sigma = mid) leaves
@@ -306,3 +310,12 @@ def oracle_vol(mid_1s: pd.Series, horizon_sec: int) -> np.ndarray:
     r2 = _log_returns(mid_1s) ** 2
     fwd = r2[::-1].rolling(horizon_sec, min_periods=1).mean()[::-1].shift(-1).ffill()
     return mid_1s.values * np.sqrt(fwd.values)
+
+
+def oracle_hour_vol(mid_1s: pd.Series, block_sec: int) -> np.ndarray:
+    """Value at second s = realized variance of the clock block (hour) holding s,
+    from that block's own returns."""
+    r2 = (_log_returns(mid_1s) ** 2).values
+    block = np.arange(len(r2)) // block_sec
+    block_var = np.bincount(block, weights=r2) / np.bincount(block)
+    return mid_1s.values * np.sqrt(block_var[block])
