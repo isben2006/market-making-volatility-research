@@ -2,6 +2,7 @@
 Hand-built checks of the simulator's fill rules (mmvol/simulator.py). With sigma = 0, gamma = k = 1,
 the quotes are fixed around a 100.0 mid: bid 99.3, ask 100.7. Each decision
 interval gets one scripted event and we check what each fill rule does.
+Then checks the P&L decomposition on a hand-computed path.
 
 Run (from src/): python -m tests.test_simulator
 """
@@ -84,8 +85,48 @@ def main():
             failures += not ok
             print(f"{'ok  ' if ok else 'FAIL'} {name:42s} {rule:12s} bid {bid_q[j]:.4f} (exp {exp_bid[j]})  "
                   f"ask {ask_q[j]:.4f} (exp {exp_ask[j]})")
+    failures += check_decomposition()
     print(f"\n{failures} failures")
     raise SystemExit(1 if failures else 0)
+
+
+def check_decomposition() -> int:
+    """Quotes fixed at 99.3 / 100.7 around a decision mid of 100 (one decision per
+    second). Second 0: a sell through our bid buys CLIP at 99.3. Second 5: a buy
+    through our ask sells CLIP at 100.7. The marking mid follows MID below.
+    Horizon H = 2 s. By hand, for the buy:
+      spread  CLIP * (100 - 99.3)          = +0.0035
+      as_2    CLIP * (mid[2] - 100)        = -0.0020  (99.6: end of the 2nd second after)
+      inv_2   CLIP * (mid[5] - mid[2])     = -0.0030  (99.0, then the position is closed)
+    and for the sell: spread +0.0035, as_2 = -CLIP * (mid[7] - 100) = -0.0050.
+    Each fill keeps its own markout, so after the sell (flat book) the old long and
+    the new short still offset inside inv / as: inv_2 gets +0.0100 over seconds 6-7."""
+    n = 10
+    mid = np.full(86400, 101.0)
+    mid[:7] = [99.8, 99.5, 99.6, 99.0, 99.0, 99.0, 101.0]
+    iv = {"n_dec": n, "dec_t": np.arange(n) * 1000,
+          "quote_mid": np.full(n, 100.0), "bid_arrive": np.full(n, 99.9), "ask_arrive": np.full(n, 100.1),
+          "ask_min_in": np.full(n, INF), "bid_max_in": np.full(n, -INF),
+          "sell_min": np.full(n, INF), "buy_max": np.full(n, -INF),
+          "s_lo": np.zeros(n, int), "s_hi": np.zeros(n, int), "b_lo": np.zeros(n, int), "b_hi": np.zeros(n, int)}
+    iv["sell_min"][0] = 99.0
+    iv["buy_max"][5] = 101.0
+    trades = {key: np.zeros(0) for key in ["sell_px", "sell_qty", "buy_px", "buy_qty"]}
+    out = run_event_sim(iv, trades, mark_mid_1s=mid, sigma_dec=np.zeros((1, n)), optimistic=np.array([False]),
+                        gamma=1.0, k=1.0, horizon_sec=300, clip_size=CLIP, decision_ms=1000, markout_secs=(2,))
+    got = {key: out[key][:n, 0].sum() for key in ["pnl_spread", "pnl_as_2", "pnl_inv_2"]}
+    exp = {"pnl_spread": 0.0070, "pnl_as_2": -0.0020 - 0.0050, "pnl_inv_2": -0.0030 + 0.0100}
+    flows = out["pnl_spread"][:n, 0] + out["pnl_as_2"][:n, 0] + out["pnl_inv_2"][:n, 0]
+    checks = [(f"decomposition {key}", abs(got[key] - exp[key]) < 1e-9, f"{got[key]:+.4f} (exp {exp[key]:+.4f})")
+              for key in exp]
+    checks.append(("decomposition adds up to pnl every second",
+                   np.allclose(flows, np.diff(np.r_[0.0, out["pnl"][:n, 0]]), atol=1e-12),
+                   f"total {flows.sum():+.4f} vs pnl {out['pnl'][n - 1, 0]:+.4f}"))
+    failures = 0
+    for name, ok, detail in checks:
+        failures += not ok
+        print(f"{'ok  ' if ok else 'FAIL'} {name:42s} {detail}")
+    return failures
 
 
 if __name__ == "__main__":

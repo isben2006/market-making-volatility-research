@@ -17,8 +17,10 @@ regime?**
 
 1. **With realistic fills, calibrated AS loses money on BTC perps** at every
    risk-aversion setting tested, before and after fees. The cause is adverse
-   selection: quotes get filled when the price runs through them. This
-   matches Falces Marín et al. (2022), whose tuned AS has a negative Sharpe
+   selection: quotes get filled when the price runs through them. A P&L
+   decomposition measures it: within 5 seconds of each fill the mid moves
+   against the market maker by about twice the spread it captured, at
+   every risk aversion, while inventory P&L is near zero. This matches Falces Marín et al. (2022), whose tuned AS has a negative Sharpe
    ratio on 28 of 30 BTC days.
 2. **The estimators differ clearly as forecasters.** EWMA beats realized
    volatility on 30/32, 37/39 and 34/35 days in low, mid and high volatility.
@@ -26,13 +28,19 @@ regime?**
    estimator comparisons (36 per setting, 7 settings), none survive a
    multiple-testing correction, and typical differences are 3–5% of the
    loss. The forecasting literature's ranking doesn't carry over to market
-   making; adverse selection dominates.
+   making; adverse selection dominates. The decomposition shows the
+   estimators differ only in how much they trade: trading less captures
+   less spread and takes less adverse selection, by similar amounts. How
+   toxic each fill is barely differs, and where it does, never in the
+   alternative's favor.
 4. **Benchmarks show why.** At low risk aversion sigma barely enters the
    quotes, and even perfect foresight of volatility is worth nothing. At
    higher risk aversion a perfect forecast is worth $20–40 a day, mostly
    from knowing the coming hour's volatility *level* rather than its
    minute-to-minute timing. The four estimators differ mainly in that
-   timing, and none of them targets the hourly level.
+   timing, and none of them targets the hourly level. Knowing the level
+   helps through inventory management; only perfect minute-level foresight
+   reduces adverse selection per fill, by seeing sweeps coming.
 
 ## Data
 
@@ -118,6 +126,15 @@ OracleHour → Oracle is the value of also knowing its timing within the hour.
   where fills come from sweeps rather than queueing.
 - **Fees:** applied afterwards from traded notional (0 and 2 bps, roughly
   Binance's standard maker fee).
+- **P&L decomposition:** each second's P&L is split exactly into
+  - **spread captured:** each fill's distance from the mid its quote was
+    based on;
+  - **adverse selection:** the mid's move against each fill over the next
+    H seconds (H = 5, and 60 as a check);
+  - **inventory:** everything else, i.e. price moves on older positions.
+
+  This mirrors the effective / realized spread split of the
+  microstructure literature (Huang & Stoll 1996).
 - Deterministic, and tested on hand-built fill scenarios
   (`src/tests/test_simulator.py`).
 
@@ -157,11 +174,8 @@ fills by 86% and roughly halves the loss per fill, but never makes it
 positive.
 
 These are conservative-bound figures; the optimistic bound is within a few
-percent. The mechanism shows in fill markouts (how far the mid moves after a
-fill), measured on the two development days before k was calibrated. On the
-calm day the market maker captures $0.96 of spread per fill, but
-the mid has moved $1.00 against it within 0.1 s and $2.60 within 5 s. On the
-volatile day: $3.41 captured, −$2.17 and −$3.26.
+percent. Where the loss comes from is measured in section 6: adverse
+selection costs about twice the spread captured.
 
 ### 2. Forecast accuracy
 
@@ -251,10 +265,56 @@ Splitting the oracle's value (paired across days):
 - The same pattern holds under the optimistic bound. Caveat: knowing an
   hour's realized vol also tells you a spike is coming sometime that hour,
   so some timing information leaks into OracleHour.
+- **The two oracles gain in different ways** (see the decomposition below).
+  At γ = 1e-2, OracleHour gains through inventory (+$19/day, t = 3.7)
+  while its adverse selection per fill is no better than RV's. The Oracle
+  also cuts adverse selection per fill, by $0.42 per BTC (t = 5.3; $0.73,
+  t = 8.6, at the 60 s horizon): it widens its quotes just before sweeps.
 
 Chart: `output/walkforward_event/benchmarks_raw_conservative_fee0.png`.
 
-### 6. Microstructure note: the signature plot
+### 6. P&L decomposition: where the loss comes from
+
+RV, conservative fills, no fees, mean per day; adverse selection over 5 s:
+
+| γ | spread captured | adverse selection | inventory | total | per BTC traded: spread / adverse selection |
+|---|---|---|---|---|---|
+| 1e-5 | +$334 | −$687 | +$3 | −$350 | $2.55 / −$5.40 |
+| 1e-4 | +$332 | −$634 | −$41 | −$344 | $2.81 / −$5.63 |
+| 1e-3 | +$213 | −$365 | +$1 | −$151 | $3.53 / −$6.20 |
+| 1e-2 | +$64 | −$98 | +$10 | −$24 | $4.65 / −$7.09 |
+
+The loss is adverse selection: about twice the spread captured at every γ.
+The same holds at the 60 s horizon and under the optimistic bound.
+
+Estimators vs RV, per component, by regime: 36 cells each (3 estimators ×
+3 regimes × 4 gammas), Bonferroni across the 36:
+
+| Component | Bonferroni-significant | \|t\| ≥ 2 |
+|---|---|---|
+| total P&L | 0 | 2 |
+| inventory | 0 | 2 |
+| spread captured | 4 | 13 |
+| adverse selection | 6 | 17 |
+| fills | 11 | 18 |
+| adverse selection per fill | 3 | 12 |
+
+- **The estimators differ in volume, not skill.** Fill counts differ
+  significantly in 11 cells, mostly EWMA trading slightly less than RV.
+  Trading less captures less spread and takes less adverse selection by
+  similar amounts, so totals don't move. Example, γ = 1e-2 (whole days):
+  EWMA has 110 fewer fills a day (t = −18), $2.70 less spread (t = −5.8),
+  $4.20 less adverse selection (t = +7.1), and no difference per fill
+  (t = 0.5).
+- **Per-fill toxicity is essentially the same.** The 3 significant cells all
+  have the alternative slightly worse than RV: EWMA by $0.03–0.05 per BTC
+  (under 1%), HAR by $0.26 (about 4%, γ = 1e-2, mid volatility).
+- **Inventory**, the channel through which sigma would still act if adverse
+  selection were removed, shows no estimator differences (0 of 36).
+
+Tables: `output/walkforward_event/decomposition_*.csv`.
+
+### 7. Microstructure note: the signature plot
 
 The usual warning is that bid-ask bounce inflates realized volatility at
 very short sampling intervals. On Binance perp mid-quotes the opposite
@@ -326,6 +386,12 @@ history is in the git log.
   seasonality (volatility rises reliably around the US open), used as the
   level anchor under the existing estimators, would test how much of the
   ~$50/day is achievable.
+- **Volatility forecasts under adverse-selection protection.** Re-run the
+  comparison with a strategy that defends against toxic fills (e.g.
+  microprice or order-book-imbalance skew, Stoikov 2018), to test whether
+  estimator choice matters once adverse selection no longer dominates. The
+  decomposition suggests it may not: estimators already don't differ in
+  the inventory component.
 - **Queue-aware fills** on L2 data, to place results within the
   conservative / optimistic bracket.
 - **Other assets and venues.**
@@ -340,10 +406,10 @@ cd src
 
 python -m scripts.select_days                    # writes data/study_days.csv
 python -m scripts.run_walkforward --workers 2    # 1-2 h, mostly downloads; deletes raw data after
-python -m scripts.analyze_walkforward            # options: --rule optimistic | --fee-bps 2 | --variant matched
+python -m scripts.analyze_walkforward            # options: --rule optimistic | --fee-bps 2 | --variant matched | --markout 60
 python -m scripts.run_robustness --workers 3     # 1-2 h
 python -m scripts.analyze_robustness
-python -m tests.test_simulator                   # fill-rule checks
+python -m tests.test_simulator                   # fill-rule and decomposition checks
 
 # signature plot (needs the two development days on disk)
 python -m scripts.download_data --date 2024-01-10
@@ -359,20 +425,20 @@ src/
     config.py                 paths, instrument, shared settings
     data.py                   Binance archive download and loaders
     estimators.py             volatility estimators (causal) and benchmarks
-    simulator.py              event-driven simulator, k calibration
+    simulator.py              event-driven simulator, P&L decomposition, k calibration
     walkforward.py            per-day pipeline: build estimators, score hours
     analysis.py               regime labels, paired tests, Model Confidence Set
     plotting.py               chart style
   scripts/                    entry points
     select_days.py            study-day sample
     run_walkforward.py        the 41-day study
-    analyze_walkforward.py    main results tables, benchmarks, charts
+    analyze_walkforward.py    main results, benchmarks, P&L decomposition, charts
     run_robustness.py         k / decision-interval / latency variants
     analyze_robustness.py     robustness summary
     signature_plot.py         RV vs sampling interval
     download_data.py          download one day
   tests/
-    test_simulator.py         hand-built fill-rule checks
+    test_simulator.py         hand-built fill-rule and decomposition checks
   legacy/                     superseded 1-second-bar pipeline (invalid P&L;
                               kept so the history can be reproduced)
 data/study_days.csv           the 41 study days

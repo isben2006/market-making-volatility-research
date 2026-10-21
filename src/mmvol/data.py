@@ -6,6 +6,7 @@ Source notes (checked 2026-08-08): data.binance.vision publishes `bookTicker`
 (every best bid/ask change) for USDⓈ-M futures only from 2023-05-16 through
 2024-03-30, and never for spot. That window bounds the study.
 """
+import shutil
 import sys
 import urllib.request
 import zipfile
@@ -18,6 +19,8 @@ from mmvol.config import DAY_SECONDS, RAW, SYMBOL
 
 BASE_URL = "https://data.binance.vision/data/futures/um/daily/{data_type}/{symbol}/{symbol}-{data_type}-{date}.zip"
 DATA_TYPES = ["aggTrades", "bookTicker"]
+DOWNLOAD_TIMEOUT_SEC = 60
+DOWNLOAD_ATTEMPTS = 3
 
 
 def download_and_extract(symbol: str, date: str, data_type: str, out_dir: Path = RAW) -> Path:
@@ -31,11 +34,17 @@ def download_and_extract(symbol: str, date: str, data_type: str, out_dir: Path =
         return csv_path
 
     print(f"[download] {url}")
-    try:
-        urllib.request.urlretrieve(url, zip_path)
-    except Exception as e:
-        print(f"  FAILED: {e}", file=sys.stderr)
-        raise
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            # timeout applies to each read: a stalled connection (e.g. after sleep) fails instead of hanging
+            with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_SEC) as resp, open(zip_path, "wb") as f:
+                shutil.copyfileobj(resp, f, length=1 << 20)
+            break
+        except Exception as e:
+            zip_path.unlink(missing_ok=True)
+            print(f"  attempt {attempt}/{DOWNLOAD_ATTEMPTS} FAILED: {e!r}", file=sys.stderr)
+            if attempt == DOWNLOAD_ATTEMPTS:
+                raise
 
     print(f"[unzip] {zip_path.name} -> {csv_path.name}")
     with zipfile.ZipFile(zip_path) as zf:

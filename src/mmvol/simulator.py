@@ -44,6 +44,7 @@ from mmvol.config import DAY_SECONDS
 
 TICK = 0.1
 EPS = 1e-6
+MARKOUT_SECS = (5, 60)  # adverse-selection horizons for the P&L decomposition
 
 
 def _window_reduce(ts, values, edges, fn, empty):
@@ -143,7 +144,7 @@ def decision_sigma(sigma_sec: np.ndarray, dec_t: np.ndarray, lagged: bool) -> np
 
 def run_event_sim(iv: dict, trades: dict, mark_mid_1s: np.ndarray, sigma_dec: np.ndarray, optimistic: np.ndarray,
                   gamma: float, k: float, horizon_sec: int, clip_size: float, decision_ms: int,
-                  trace_run: int = None, k_idx: np.ndarray = None):
+                  trace_run: int = None, k_idx: np.ndarray = None, markout_secs: tuple = MARKOUT_SECS):
     """B runs at once: sigma_dec (B, n_dec); optimistic (B,) bool picks each run's fill rule.
     gamma: scalar or (B,) per run. k: scalar, (n_dec,) per decision (e.g.
     from calibrate_k_walkforward), or (n_dec, M) with k_idx (B,) choosing
@@ -153,7 +154,17 @@ def run_event_sim(iv: dict, trades: dict, mark_mid_1s: np.ndarray, sigma_dec: np
     Returns per-second arrays (DAY_SECONDS, B): pnl (marked to the mid at the
     end of each second), fills, notional, spread_sum, inv_abs_sum, plus
     per-run counts of post-only rejections. With trace_run=j, also returns
-    every fill of run j as (decision index, +1 buy / -1 sell, price, qty)."""
+    every fill of run j as (decision index, +1 buy / -1 sell, price, qty).
+
+    P&L decomposition, per-second flows that add up exactly to the change in
+    pnl (for each H in markout_secs):
+      pnl_spread   each fill's edge vs the mid its quote was based on
+                   (quote_mid at the decision): mid - price for a buy.
+      pnl_as_H     adverse selection: the mid's move against each fill, from
+                   that decision mid to the end of the H-th second after the
+                   fill's second. Includes the move between decision and fill.
+      pnl_inv_H    inventory: mid moves on position older than that.
+    spread + as_H is the realized spread (Huang & Stoll 1996) at horizon H."""
     trace = []
     B, n_dec = sigma_dec.shape
     per_sec = 1000 // decision_ms
@@ -176,6 +187,16 @@ def run_event_sim(iv: dict, trades: dict, mark_mid_1s: np.ndarray, sigma_dec: np
     acc_fills, acc_notional, acc_spread, acc_inv = np.zeros(B), np.zeros(B), np.zeros(B), np.zeros(B)
     rejected = np.zeros(B)
     clip = np.full(B, clip_size)
+
+    # decomposition state: flows within the current second, inventory at the end of the
+    # previous one, and per horizon a ring of net fills by second plus their running sum
+    # (the "young" position, filled within the last H seconds)
+    for key in ["pnl_spread"] + [f"pnl_{c}_{h}" for h in markout_secs for c in ("as", "inv")]:
+        out[key] = np.zeros((DAY_SECONDS, B))
+    sec_spread, sec_netq, sec_netq_mid = np.zeros(B), np.zeros(B), np.zeros(B)
+    inv_prev, m_prev = np.zeros(B), mark_mid_1s[0]
+    ring = {h: np.zeros((h, B)) for h in markout_secs}
+    young = {h: np.zeros(B) for h in markout_secs}
 
     for kk in range(n_dec):
         tr = horizon_sec - ((kk * decision_ms / 1000.0) % horizon_sec)
@@ -220,6 +241,9 @@ def run_event_sim(iv: dict, trades: dict, mark_mid_1s: np.ndarray, sigma_dec: np
 
         inv += fb - fa
         cash += a * fa - b * fb
+        sec_spread += fb * (qmid[kk] - b) + fa * (a - qmid[kk])
+        sec_netq += fb - fa
+        sec_netq_mid += (fb - fa) * qmid[kk]
         acc_fills += (fb > 0).astype(float) + (fa > 0).astype(float)
         acc_notional += a * fa + b * fb
         acc_spread += a - b
@@ -233,6 +257,21 @@ def run_event_sim(iv: dict, trades: dict, mark_mid_1s: np.ndarray, sigma_dec: np
             out["spread_sum"][s] = acc_spread
             out["inv_abs_sum"][s] = acc_inv
             acc_fills[:], acc_notional[:], acc_spread[:], acc_inv[:] = 0, 0, 0, 0
+
+            m = mark_mid_1s[s]
+            d_mid = m - m_prev
+            entry = sec_netq * m - sec_netq_mid  # this second's fills: decision mid -> end of second
+            out["pnl_spread"][s] = sec_spread
+            for h in markout_secs:
+                y = young[h]  # net fills of seconds s-h .. s-1
+                out[f"pnl_as_{h}"][s] = entry + y * d_mid
+                out[f"pnl_inv_{h}"][s] = (inv_prev - y) * d_mid
+                slot = s % h
+                y += sec_netq - ring[h][slot]
+                ring[h][slot] = sec_netq
+            inv_prev[:] = inv
+            m_prev = m
+            sec_spread[:], sec_netq[:], sec_netq_mid[:] = 0, 0, 0
 
     out["rejected"] = rejected
     out["per_sec"] = per_sec

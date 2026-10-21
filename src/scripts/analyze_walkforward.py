@@ -16,16 +16,21 @@ Prints:
      OracleHour (the hour's realized vol, held flat) splitting the gap into
      knowing the level vs knowing the timing. Paired differences vs RV in USD
      per day. Oracle - RV bounds what any better sigma forecast could add.
+  5. P&L decomposition (mmvol.simulator.run_event_sim): spread captured,
+     adverse selection (the mid's move against each fill over --markout
+     seconds), inventory P&L and fees, for RV, then each estimator and
+     benchmark vs RV component by component.
 
-Usage (from src/): python -m scripts.analyze_walkforward [--variant raw] [--rule conservative] [--fee-bps 0]
+Usage (from src/): python -m scripts.analyze_walkforward [--variant raw] [--rule conservative] [--fee-bps 0] [--markout 5]
 """
 import argparse
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 from mmvol.analysis import REGIMES, label_regimes, mcs_set, paired, units
-from mmvol.config import ESTIMATORS, MAIN_VARIANT, OUT, SYMBOL
+from mmvol.config import CLIP_SIZE, ESTIMATORS, MAIN_VARIANT, OUT, SYMBOL
 from mmvol.plotting import EST_COLORS, PALETTE, plt
 
 WF_DIR = OUT / "walkforward_event"
@@ -63,6 +68,7 @@ def main():
     ap.add_argument("--variant", default=MAIN_VARIANT, choices=["raw", "matched"])
     ap.add_argument("--rule", default="conservative", choices=["conservative", "optimistic"])
     ap.add_argument("--fee-bps", type=float, default=0.0)
+    ap.add_argument("--markout", type=int, default=5, choices=[5, 60], help="adverse-selection horizon, seconds")
     args = ap.parse_args()
 
     blocks, cuts = label_regimes(load_blocks())
@@ -142,6 +148,8 @@ def main():
 
     if (blocks["variant"] == "benchmark").any():
         benchmark_table(blocks, args.variant, args.rule, args.fee_bps)
+    if "pnl_spread" in blocks.columns:
+        decomposition_table(blocks, args.variant, args.rule, args.fee_bps, args.markout)
 
 
 def benchmark_table(blocks: pd.DataFrame, variant: str, rule: str, fee_bps: float):
@@ -197,6 +205,90 @@ def benchmark_table(blocks: pd.DataFrame, variant: str, rule: str, fee_bps: floa
     out_png = WF_DIR / f"benchmarks_{variant}_{rule}_fee{fee_bps:g}.png"
     fig.savefig(out_png, dpi=130)
     print(f"[plot] {out_png}")
+
+
+def _paired_t(d: pd.Series):
+    d = d.dropna()
+    se = d.std(ddof=1) / np.sqrt(len(d))
+    return d.mean(), d.mean() / se if se > 0 else np.nan
+
+
+def decomposition_table(blocks: pd.DataFrame, variant: str, rule: str, fee_bps: float, h: int):
+    names = ["Flat", *ESTIMATORS, "OracleHour", "Oracle"]
+    b = blocks[blocks["variant"].isin([variant, "benchmark"]) & (blocks["rule"] == rule)
+               & blocks["estimator"].isin(names) & blocks["pnl_spread"].notna()]
+    b = b.assign(fees=-fee_bps * 1e-4 * b["notional"])
+    comps = {"spread": "pnl_spread", "adverse_sel": f"pnl_as_{h}", "inventory": f"pnl_inv_{h}", "fees": "fees"}
+    day = (b.groupby(["gamma", "estimator", "date"])[[*comps.values(), "pnl", "fills"]].sum()
+            .rename(columns={v: k for k, v in comps.items()}))
+    day["total"] = day["pnl"] + day["fees"]
+    full = day.groupby(["gamma", "date"]).size() == len(names)  # same days for every row
+    day = day[day.index.droplevel("estimator").isin(full.index[full])]
+    per_fill = 1.0 / (day["fills"] * CLIP_SIZE)  # $ per BTC traded: comparable to a price distance
+    day["spread_pf"], day["as_pf"] = day["spread"] * per_fill, day["adverse_sel"] * per_fill
+    n_days = day.index.get_level_values("date").nunique()
+
+    print(f"\n=== 5. P&L decomposition ({variant} sigma, {rule} fills, fee {fee_bps:g} bps, "
+          f"adverse selection over {h} s; {n_days} days) ===")
+    print("Per day: spread captured + adverse selection + inventory + fees = total. "
+          "Per fill: $ per BTC traded (spread = distance from the decision mid; adverse = mid move against the fill).")
+    rv = day.xs("RV", level="estimator").groupby("gamma").mean()
+    tab = rv[[*comps, "total", "fills", "spread_pf", "as_pf"]].copy()
+    tab.index = [f"{g:.0e}" for g in tab.index]
+    print("RV:")
+    print(tab.round(2).to_string())
+
+    rows = []
+    print("\nVs RV, mean paired difference per day (t-stat); per-fill adverse selection difference in $ per BTC:")
+    for g in sorted(day.index.get_level_values("gamma").unique()):
+        w = day.xs(g, level="gamma")
+        base = w.xs("RV", level="estimator")
+        line = []
+        for e in [e for e in names if e != "RV"]:
+            x = w.xs(e, level="estimator")
+            row = {"gamma": g, "estimator": e}
+            for c in [*comps, "total", "fills", "as_pf"]:
+                row[f"{c}_diff"], row[f"{c}_t"] = _paired_t(x[c] - base[c])
+            rows.append(row)
+            line.append(f"{e:>10s}: spread {row['spread_diff']:+6.1f} ({row['spread_t']:+.1f})  "
+                        f"adverse {row['adverse_sel_diff']:+6.1f} ({row['adverse_sel_t']:+.1f})  "
+                        f"inventory {row['inventory_diff']:+6.1f} ({row['inventory_t']:+.1f})  "
+                        f"fees {row['fees_diff']:+5.1f}  total {row['total_diff']:+6.1f}  "
+                        f"| adverse/fill {row['as_pf_diff']:+.3f} ({row['as_pf_t']:+.1f})")
+        print(f"gamma {g:.0e}:\n  " + "\n  ".join(line))
+    out_csv = WF_DIR / f"decomposition_{variant}_{rule}_fee{fee_bps:g}_h{h}.csv"
+    pd.DataFrame(rows).to_csv(out_csv, index=False, float_format="%.6g")
+    print(f"[csv] {out_csv}")
+
+    # by regime: estimators vs RV per component, day x regime units, Bonferroni over the 36 cells
+    reg = (b[b["estimator"].isin(ESTIMATORS)].groupby(["gamma", "regime", "estimator", "date"], observed=True)
+            [[*comps.values(), "pnl", "fills"]].sum().rename(columns={v: k for k, v in comps.items()}))
+    reg["total"] = reg["pnl"] + reg["fees"]
+    reg["as_pf"] = reg["adverse_sel"] / (reg["fills"] * CLIP_SIZE)
+    cells = []
+    for (g, regime), w in reg.groupby(level=["gamma", "regime"], observed=True):
+        w = w.droplevel(["gamma", "regime"])
+        base = w.xs("RV", level="estimator")
+        for e in ESTIMATORS[1:]:
+            x = w.xs(e, level="estimator")
+            for c in ["total", "spread", "adverse_sel", "inventory", "fills", "as_pf"]:
+                d = (x[c] - base[c]).dropna()
+                diff, t = _paired_t(d)
+                cells.append({"gamma": g, "regime": regime, "estimator": e, "component": c, "diff": diff, "t": t,
+                              "bonferroni": 2 * stats.t.sf(abs(t), len(d) - 1) < 0.05 / 36})
+    cells = pd.DataFrame(cells)
+    n_cells = cells.groupby("component").size().iloc[0]
+    print(f"\nBy regime: estimators vs RV, {n_cells} cells per component (3 estimators x 3 regimes x 4 gammas):")
+    print(cells.groupby("component", sort=False).agg(bonferroni=("bonferroni", "sum"),
+                                                    abs_t_ge_2=("t", lambda t: int((t.abs() >= 2).sum())))
+          .to_string())
+    sig = cells[(cells["component"] == "as_pf") & cells["bonferroni"]]
+    if len(sig):
+        print("Bonferroni-significant per-fill adverse selection ($ per BTC, + = less damage than RV):")
+        print(sig[["gamma", "regime", "estimator", "diff", "t"]].round(3).to_string(index=False))
+    out_csv = WF_DIR / f"decomposition_regimes_{variant}_{rule}_fee{fee_bps:g}_h{h}.csv"
+    cells.to_csv(out_csv, index=False, float_format="%.6g")
+    print(f"[csv] {out_csv}")
 
 
 if __name__ == "__main__":

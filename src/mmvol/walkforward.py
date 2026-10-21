@@ -105,11 +105,13 @@ def score_blocks(date: str, mid: pd.Series, sigmas: dict, sim: dict, labels: lis
             }
         blk_pnl = pnl[end - 1] - pnl[start - 1]
         blk = {name: sim[name][start:end].sum(axis=0) for name in ["fills", "notional", "spread_sum", "inv_abs_sum"]}
+        parts = {name: sim[name][start:end].sum(axis=0) for name in sim if name.startswith("pnl_")}
         n_dec_blk = BLOCK_SEC * per_sec
         for j, lab in enumerate(labels):
             rows.append({**market, **lab,
                          "pnl": blk_pnl[j], "fills": int(blk["fills"][j]), "notional": blk["notional"][j],
                          "spread_mean": blk["spread_sum"][j] / n_dec_blk,
                          "inv_abs_mean": blk["inv_abs_sum"][j] / n_dec_blk,
+                         **{name: parts[name][j] for name in parts},
                          **fcst[(lab["variant"], lab["estimator"])]})
     return rows
