@@ -25,9 +25,10 @@ Equivalence for all cells at once needs each cell's TOST to pass at 5%; no
 multiplicity correction is needed for that joint claim (intersection-union
 principle, Berger 1982). Significance claims (the mde at 5% / 36) do need it.
 
-Usage (from src/): python -m scripts.analyze_power [--rule conservative] [--fee-bps 0]
+Usage (from src/): python -m scripts.analyze_power [--days ../data/study_days_holdout.csv] [--rule conservative] [--fee-bps 0]
 """
 import argparse
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -42,8 +43,8 @@ ALPHA = 0.05
 N_CELLS = 36  # 3 estimators x 3 regimes x 4 gammas: the main comparison's Bonferroni family
 
 
-def load(rule: str, fee_bps: float) -> pd.DataFrame:
-    files = study_files(WF_DIR)
+def load(rule: str, fee_bps: float, days_csv=None) -> pd.DataFrame:
+    files = study_files(WF_DIR, days_csv=days_csv)
     blocks = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
     blocks = blocks[(blocks["rule"] == rule) & (blocks["variant"].isin([MAIN_VARIANT, "benchmark"]))]
     blocks, _ = label_regimes(blocks)
@@ -73,9 +74,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rule", default="conservative", choices=["conservative", "optimistic"])
     ap.add_argument("--fee-bps", type=float, default=0.0)
+    ap.add_argument("--days", default=None, help="day list CSV instead of data/study_days.csv")
     args = ap.parse_args()
+    tag = "_" + Path(args.days).stem.replace("study_days_", "") if args.days else ""
 
-    u = load(args.rule, args.fee_bps)
+    u = load(args.rule, args.fee_bps, args.days)
     rows = []
     for (g, regime), w in u.groupby(level=["gamma", "regime"]):
         w = w.droplevel(["gamma", "regime"])
@@ -91,7 +94,7 @@ def main():
     res = pd.DataFrame(rows)
     res["regime"] = pd.Categorical(res["regime"], ["all", *REGIMES], ordered=True)
     res = res.sort_values(["gamma", "regime", "estimator"])
-    out_csv = WF_DIR / f"power_{MAIN_VARIANT}_{args.rule}_fee{args.fee_bps:g}.csv"
+    out_csv = WF_DIR / f"power_{MAIN_VARIANT}_{args.rule}_fee{args.fee_bps:g}{tag}.csv"
     res.to_csv(out_csv, index=False, float_format="%.6g")
 
     pd.set_option("display.width", 220)

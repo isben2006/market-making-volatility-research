@@ -43,7 +43,6 @@ date,weekday,range_pct,volume,tercile
 2023-07-14,Friday,5.6085,538692.2460,volatile
 2023-07-17,Monday,2.3156,344113.4270,calm
 2023-07-18,Tuesday,2.7468,337396.4170,calm
-2023-07-19,Wednesday,1.4525,298418.8540,calm
 2023-07-20,Thursday,3.1817,410263.7640,mid
 2023-07-21,Friday,1.1759,221145.0740,calm
 2023-07-24,Monday,4.1958,434182.4170,mid
@@ -164,7 +163,6 @@ date,weekday,range_pct,volume,tercile
 2024-01-05,Friday,4.9837,374967.7910,volatile
 2024-01-08,Monday,9.4585,495087.9830,volatile
 2024-01-09,Tuesday,7.8403,513362.7730,volatile
-2024-01-10,Wednesday,7.3900,668657.4740,volatile
 2024-01-11,Thursday,7.3452,596698.3790,volatile
 2024-01-12,Friday,11.1490,575943.2580,volatile
 2024-01-15,Monday,3.9679,240059.1410,mid

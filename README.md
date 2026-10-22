@@ -15,8 +15,9 @@ regime?**
 
 ## Summary of results
 
-221 trading days, four estimators (RV, EWMA, GARCH, HAR), three volatility
-regimes, four risk-aversion levels.
+219 trading days, four estimators (RV, EWMA, GARCH, HAR), three volatility
+regimes, four risk-aversion levels. Every conclusion also holds on the 180
+days that were never used while developing the method.
 
 1. **The estimators differ clearly as forecasters.** HAR has the lowest
    forecast loss in every regime; realized volatility (RV) is the worst and
@@ -24,7 +25,10 @@ regimes, four risk-aversion levels.
 2. **But they don't change market-making P&L.** None of the 36 estimator
    comparisons (3 estimators × 3 regimes × 4 risk aversions) survives a
    multiple-testing correction, here or in any of 6 robustness settings
-   (k calibration, decision speed, latency; run on a 41-day sample).
+   (k calibration, decision speed, latency; run on a 39-day sample). The
+   one exception is small: in calm markets EWMA loses slightly less than RV
+   (about $1.50 a day at γ = 1e-2, significant on the out-of-sample days),
+   because it trades a little less.
 3. **The null is precise.** Over whole days, every estimator is
    statistically equivalent to RV within $3–12 a day (1–5% of the loss for
    γ ≤ 1e-3). By regime, 27 of 36 comparisons are equivalent within ±10% of
@@ -35,9 +39,12 @@ regimes, four risk-aversion levels.
    seconds of each fill the price moves against the market maker by about
    twice the spread it captured. The estimators differ mainly in how much
    they trade, and trading less captures less spread but also takes less
-   adverse selection, so totals don't move.
+   adverse selection, so totals don't move. The AS formula explains why
+   there's little room: sigma controls only 3–33% of the quoted spread at
+   γ ≤ 1e-3, and where it controls more (83% at γ = 1e-2) the estimators'
+   quote changes average out to almost zero.
 5. **Could any sigma help?** Yes, but not these. Perfect foresight of
-   volatility is worth $18–29 a day; most of that comes from knowing the
+   volatility is worth $19–28 a day; most of that comes from knowing the
    coming hour's volatility *level*, which none of the four short-horizon
    estimators targets. Even the perfect forecast only reaches break-even
    before fees, at the highest risk aversion, and loses about $95 a day
@@ -54,9 +61,18 @@ Sharpe ratio on 28 of 30 BTC days.
   timestamps) and `aggTrades` (every trade, with size and aggressor side).
 - **Window:** futures `bookTicker` is only published from 2023-05-16 to
   2024-03-30; spot never had it. That bounds the study period.
-- **Days:** every weekday in the window, 228, minus 7 with broken data:
-  **221 days** (`data/study_days.csv`). Weekends are excluded: their much
-  lower volume would mix a liquidity regime into the volatility comparison.
+- **Days:** every weekday in the window, 228, minus 7 with broken data and
+  the 2 development days: **219 days** (`data/study_days.csv`). Weekends are
+  excluded: their much lower volume would mix a liquidity regime into the
+  volatility comparison.
+- **Development days excluded:** the pipeline was built and its settings
+  tuned on 2024-01-10 and 2023-07-19 (refit windows, the HAR and GARCH
+  fitting fixes, the AS horizon), so they're kept out of every result.
+- **Out-of-sample check** (`data/study_days_holdout.csv`): further design
+  choices (the event-driven fill model, k calibration, raw vs level-matched
+  sigma) were made while results on the first 41-day sample were visible.
+  The 180 study days added afterwards played no part in any decision, and
+  the main conclusions are checked on them alone (Results, section 9).
 - **Data quality** (`src/scripts/check_data_quality.py`,
   `data/data_quality.csv`): Binance's archive has holes, stretches with no
   quote updates while trades keep printing (14 minutes and 268,529 trades
@@ -74,8 +90,7 @@ Sharpe ratio on 28 of 30 BTC days.
 An earlier version of the study used a stratified sample of 41 of these
 days (`data/study_days_41.csv`). The power analysis (Results, section 4)
 showed regime-level comparisons needed more days, so the study now uses
-all of them. None of the 41 days fail the data check, and their
-conclusions match.
+all of them. None of the 41 days fail the data check.
 
 ## Method
 
@@ -161,9 +176,9 @@ OracleHour → Oracle is the value of also knowing its timing within the hour.
 
 - **Regimes:** each scored hour is labeled low, mid or high volatility by
   its trailing 3-hour realized vol (60 s returns, data before the hour
-  only), split into terciles across all 4,641 scored hours. Cutoffs: 29% and
-  46% annualized. Low, mid and high hours occur on 170, 209 and 189 of the
-  221 days.
+  only), split into terciles across all 4,599 scored hours. Cutoffs: 29% and
+  46% annualized. Low, mid and high hours occur on 169, 207 and 188 of the
+  219 days.
 - **Metrics:**
   - **P&L per unit volatility:** P&L divided by clip size times the dollar
     volatility of the mid. Comparable across regimes.
@@ -184,8 +199,9 @@ OracleHour → Oracle is the value of also knowing its timing within the hour.
 
 ## Results
 
-All results: 221 days, raw sigma, conservative fills, no fees, unless
-stated. Robustness (section 7) uses the earlier 41-day sample.
+All results: 219 days, raw sigma, conservative fills, no fees, unless
+stated. Robustness (section 8) uses the earlier 41-day sample minus the
+development days (39 days).
 
 ### 1. AS economics (baseline)
 
@@ -193,10 +209,10 @@ RV, mean per day over the 21 scored hours:
 
 | γ | avg spread | fills/day | edge (bps of notional) | P&L/day, no fees | P&L/day, 2 bps fee | days positive |
 |---|---|---|---|---|---|---|
-| 1e-5 | $4.88 | 18,653 | −0.83 | −$350 | −$1,193 | 58/221 |
-| 1e-4 | $5.09 | 16,959 | −0.74 | −$281 | −$1,035 | 29/221 |
-| 1e-3 | $7.15 | 9,985 | −0.62 | −$128 | −$540 | 18/221 |
-| 1e-2 | $27.79 | 2,679 | −0.38 | −$19 | −$119 | 77/221 |
+| 1e-5 | $4.88 | 18,515 | −0.83 | −$349 | −$1,186 | 58/219 |
+| 1e-4 | $5.08 | 16,858 | −0.75 | −$279 | −$1,030 | 29/219 |
+| 1e-3 | $7.11 | 9,958 | −0.62 | −$128 | −$539 | 18/219 |
+| 1e-2 | $27.42 | 2,677 | −0.39 | −$19 | −$119 | 76/219 |
 
 Higher γ loses less mainly by trading less: going from 1e-5 to 1e-2 cuts
 fills by 86% and the loss per fill by about 60%, but never makes it
@@ -209,9 +225,9 @@ estimator beats RV, and membership in the 10% Model Confidence Set:
 
 | Regime (days) | RV | EWMA | GARCH | HAR |
 |---|---|---|---|---|
-| low (170) | 0.724 ✗ | 0.583, 165/170 ✗ | 0.496, 139/170 ✗ | **0.416**, 155/170 ✓ |
-| mid (209) | 0.414 ✗ | 0.377, 201/209 ✓ | 0.361, 147/209 ✓ | **0.355**, 162/209 ✓ |
-| high (189) | 0.275 ✗ | 0.250, 177/189 ✗ | 0.279, 112/189 ✓ | **0.237**, 147/189 ✓ |
+| low (169) | 0.729 ✗ | 0.584, 164/169 ✗ | 0.500, 137/169 ✗ | **0.418**, 154/169 ✓ |
+| mid (207) | 0.414 ✗ | 0.377, 199/207 ✓ | 0.361, 145/207 ✓ | **0.357**, 161/207 ✓ |
+| high (188) | 0.269 ✗ | 0.250, 176/188 ✗ | 0.272, 111/188 ✓ | **0.236**, 146/188 ✓ |
 
 (✓ in the Model Confidence Set, ✗ excluded.) HAR has the lowest loss and
 stays in the confidence set in every regime; RV is excluded in all three.
@@ -221,13 +237,13 @@ EWMA beats RV most consistently, on 94–97% of days.
 
 36 comparisons: 3 estimators vs RV × 3 regimes × 4 gammas.
 
-- **No significant differences.** 6 of 36 reach |t| ≥ 2, about what chance
+- **No significant differences.** 5 of 36 reach |t| ≥ 2, about what chance
   alone gives (1.8 expected); none survive Bonferroni. The median
   difference is 2% of RV's level. The same holds under the optimistic bound
-  (6 / 0) and with level-matched sigma (4 / 0).
+  (5 / 0) and with level-matched sigma (4 / 0).
 - **One weak pattern:** EWMA does slightly better than RV in low volatility
-  at every γ ≥ 1e-4 (t = 2.1, 2.6, 3.0), just short of the Bonferroni
-  threshold. It may be a small real effect (section 4).
+  at every γ ≥ 1e-4 (t = 2.1, 2.7, 3.0), just short of the Bonferroni
+  threshold here, and significant on the out-of-sample days (section 9).
 - **With a 2 bps fee,** 10 of 36 survive Bonferroni, because fees charge for
   volume: estimators that trade less (mostly EWMA) pay less in fees. The
   directions match the fill-count differences in section 5, so this is a
@@ -244,17 +260,17 @@ Whole days, estimator − RV in $/day:
 
 | γ | RV P&L | EWMA: 95% CI / equivalent within | GARCH | HAR | Oracle − RV |
 |---|---|---|---|---|---|
-| 1e-5 | −$350 | [−0.9, +5.2] / ±$4.7 | [−7.1, +7.0] / ±$5.9 | [−10.5, +7.7] / ±$9.1 | +$18.4 |
-| 1e-4 | −$281 | [−2.3, +4.6] / ±$4.0 | [−8.5, +4.6] / ±$7.5 | [−13.5, +1.2] / ±$12.3 | +$28.5 |
-| 1e-3 | −$128 | [−0.6, +5.5] / ±$5.0 | [−2.4, +6.3] / ±$5.6 | [−7.3, +4.3] / ±$6.3 | +$26.9 |
-| 1e-2 | −$19 | [−3.7, +1.2] / ±$3.3 | [−4.3, +3.6] / ±$3.6 | [−0.2, +7.2] / ±$6.6 | +$21.6 |
+| 1e-5 | −$349 | [−1.0, +5.2] / ±$4.7 | [−7.7, +6.2] / ±$6.6 | [−10.8, +7.6] / ±$9.3 | +$19.3 |
+| 1e-4 | −$279 | [−2.5, +4.5] / ±$3.9 | [−8.5, +4.8] / ±$7.4 | [−13.0, +1.7] / ±$11.8 | +$28.0 |
+| 1e-3 | −$128 | [−0.8, +5.2] / ±$4.7 | [−2.3, +6.5] / ±$5.7 | [−7.2, +4.5] / ±$6.2 | +$27.3 |
+| 1e-2 | −$19 | [−3.8, +1.1] / ±$3.4 | [−4.1, +3.8] / ±$3.5 | [−0.3, +7.1] / ±$6.5 | +$21.6 |
 
 "Equivalent within" is the smallest margin at which a 5% TOST passes.
 
 - **Whole days:** every estimator is within $3–12 a day of RV, 1–5% of the
   loss for γ ≤ 1e-3, and well under what perfect volatility foresight is
-  worth. The minimum detectable effect is 1.5–9% of RV's spread captured
-  (median 3.6%).
+  worth. The minimum detectable effect is 1.6–9.4% of RV's spread captured
+  (median 3.7%).
 - **By regime** (36 cells, as % of RV's spread captured in that cell):
   equivalence holds within ±5% in 14 cells, ±10% in 27 and ±20% in 35. The
   median minimum detectable effect is 7.5% (10.9% at the Bonferroni level).
@@ -280,10 +296,10 @@ RV, mean per day; adverse selection over 5 s:
 
 | γ | spread captured | adverse selection | inventory | total | per BTC traded: spread / adverse selection |
 |---|---|---|---|---|---|
-| 1e-5 | +$281 | −$600 | −$31 | −$350 | $2.49 / −$5.28 |
-| 1e-4 | +$282 | −$560 | −$3 | −$281 | $2.69 / −$5.44 |
-| 1e-3 | +$195 | −$337 | +$13 | −$128 | $3.41 / −$6.01 |
-| 1e-2 | +$60 | −$92 | +$12 | −$19 | $4.53 / −$6.92 |
+| 1e-5 | +$278 | −$594 | −$33 | −$349 | $2.48 / −$5.27 |
+| 1e-4 | +$279 | −$555 | −$3 | −$279 | $2.69 / −$5.44 |
+| 1e-3 | +$193 | −$335 | +$13 | −$128 | $3.40 / −$6.00 |
+| 1e-2 | +$60 | −$91 | +$12 | −$19 | $4.51 / −$6.91 |
 
 **The loss is adverse selection:** about twice the spread captured, at
 every γ, at the 60 s horizon too and under the optimistic bound. Inventory
@@ -298,14 +314,14 @@ across the 36):
 | inventory | 0 | 2 |
 | spread captured | 18 | 28 |
 | adverse selection | 15 | 21 |
-| fills | 21 | 28 |
+| fills | 20 | 29 |
 | adverse selection per fill | 14 | 22 |
 
 - **The estimators differ mainly in volume.** Trading less captures less
   spread and takes less adverse selection, by similar amounts, so totals
-  don't move. Example, γ = 1e-2, whole days: EWMA makes 119 fewer fills a
-  day than RV (t = −35), captures $2.86 less spread (t = −18), takes $4.08
-  less adverse selection (t = +18), and differs by −$1.20 in total.
+  don't move. Example, γ = 1e-2, whole days: EWMA makes 118 fewer fills a
+  day than RV (t = −35), captures $2.80 less spread (t = −20), takes $4.03
+  less adverse selection (t = +18), and differs by −$1.32 in total.
 - **Per-fill toxicity differs, but only by a few percent, in both
   directions.** EWMA and GARCH take $0.01–0.09 more adverse selection per
   BTC than RV (under 1.5%); HAR takes $0.015–0.07 less at γ ≤ 1e-3 but
@@ -316,42 +332,89 @@ across the 36):
 
 Tables: `output/walkforward_event/decomposition_*.csv`.
 
-### 6. Could any sigma help? Benchmarks
+### 6. Why sigma has little room: sigma in the quotes
+
+AS quotes a spread of γσ²τ + (2/γ)·ln(1 + γ/k) (Avellaneda & Stoikov 2008).
+Sigma enters only the first term; the second depends on k and γ alone.
+Splitting RV's quoted spread with the k in force each hour:
+
+| γ | quoted spread | k part | sigma part | sigma's share | per BTC: spread captured / adverse selection |
+|---|---|---|---|---|---|
+| 1e-5 | $4.88 | $4.76 | $0.12 | 3% | $2.48 / −$5.27 |
+| 1e-4 | $5.08 | $4.76 | $0.33 | 6% | $2.69 / −$5.44 |
+| 1e-3 | $7.11 | $4.75 | $2.36 | 33% | $3.40 / −$6.00 |
+| 1e-2 | $27.42 | $4.70 | $22.73 | 83% | $4.51 / −$6.91 |
+
+(The sigma part includes up to one $0.10 tick from rounding, so at
+γ = 1e-5 it is essentially all rounding.)
+
+How far each estimator moves the quoted half-spread away from RV's, $ per
+BTC (hourly averages):
+
+| γ | EWMA: average / size | GARCH | HAR | Oracle |
+|---|---|---|---|---|
+| 1e-4 | +0.00 / 0.00 | −0.00 / 0.02 | −0.00 / 0.04 | −0.00 / 0.01 |
+| 1e-3 | +0.00 / 0.02 | −0.02 / 0.18 | −0.01 / 0.35 | −0.00 / 0.09 |
+| 1e-2 | +0.02 / 0.23 | −0.25 / 1.80 | −0.05 / 3.47 | −0.00 / 0.93 |
+
+"Average" is the signed mean change (a systematic bias); "size" is the
+mean absolute change.
+
+- **At γ ≤ 1e-3 sigma has little to work with.** It controls at most a
+  third of the spread, and the estimators move each side of the quote by
+  at most $0.35 per BTC, under 6% of the $5–6 the price moves against each
+  fill. No estimator can turn a losing fill into a profitable one.
+- **At γ = 1e-2 the changes are large but cancel.** HAR moves the
+  half-spread by $3.47 per BTC on average, half the adverse-selection cost,
+  but its signed average is −$0.05: wider half the time, narrower the
+  other half. To first order, a change in the quotes moves P&L in
+  proportion to it, so changes that average to zero leave P&L roughly
+  where it was.
+- **Size isn't what matters; timing is.** The Oracle moves the quotes
+  *less* than HAR or GARCH but earns the most (section 7), because it
+  widens just before adverse moves (section 5, adverse selection per fill).
+  Estimators built only from past data can't do that.
+- Hourly averages understate the second-to-second changes, so the "size"
+  column is a lower bound.
+
+Table: `output/walkforward_event/sigma_role_raw_conservative_h5.csv`.
+
+### 7. Could any sigma help? Benchmarks
 
 Whole-day P&L vs RV, $/day (t-stat):
 
 | γ | RV level | Flat | EWMA | GARCH | HAR | OracleHour | Oracle |
 |---|---|---|---|---|---|---|---|
-| 1e-5 | −$350 | +12 (0.9) | +2 | 0 | −1 | +13 (1.8) | +18 (2.5) |
-| 1e-4 | −$281 | −19 (−2.3) | +1 | −2 | −6 | +19 (4.4) | +29 (6.6) |
-| 1e-3 | −$128 | −28 (−5.1) | +2 | +2 | −2 | +10 (3.3) | +27 (6.8) |
-| 1e-2 | −$19 | −15 (−3.7) | −1 | 0 | +3 | +16 (6.1) | +22 (8.9) |
+| 1e-5 | −$349 | +12 (0.9) | +2 | −1 | −2 | +14 (2.0) | +19 (2.7) |
+| 1e-4 | −$279 | −20 (−2.3) | +1 | −2 | −6 | +19 (4.4) | +28 (6.5) |
+| 1e-3 | −$128 | −28 (−5.0) | +2 | +2 | −1 | +10 (3.3) | +27 (6.9) |
+| 1e-2 | −$19 | −15 (−3.7) | −1 | 0 | +3 | +16 (6.0) | +22 (8.8) |
 
 Splitting the oracle's value (paired across days):
 
 | γ | level: OracleHour − Flat | timing: Oracle − OracleHour |
 |---|---|---|
-| 1e-5 | +1 (t=0.1) | +6 (t=1.7) |
-| 1e-4 | +38 (t=4.3) | +10 (t=2.8) |
-| 1e-3 | +38 (t=7.3) | +17 (t=5.0) |
-| 1e-2 | +31 (t=6.9) | +6 (t=2.6) |
+| 1e-5 | +3 (t=0.2) | +5 (t=1.5) |
+| 1e-4 | +39 (t=4.4) | +9 (t=2.7) |
+| 1e-3 | +38 (t=7.2) | +18 (t=5.2) |
+| 1e-2 | +31 (t=6.9) | +6 (t=2.7) |
 
 - **At γ = 1e-5 sigma barely enters the quotes.** The volatility term
   γσ²τ is cents, so the spread is set by k; even perfect foresight adds
   only ~5% of the loss.
-- **At higher γ a better sigma is worth $22–29 a day**, more than the whole
+- **At higher γ a better sigma is worth $22–28 a day**, more than the whole
   gross loss at γ = 1e-2. The four estimators capture almost none of it
   (section 4 bounds them at a fraction of the oracle's gain).
-- **Most of that value is the hourly level** ($31–38 a day), with timing
-  within the hour adding $6–17. Some dynamics beat none: Flat, which only
+- **Most of that value is the hourly level** ($31–39 a day), with timing
+  within the hour adding $6–18. Some dynamics beat none: Flat, which only
   knows the trailing 3-hour level, is clearly worse than RV at γ ≥ 1e-4.
 - **How the oracles gain** (decomposition): both mainly through inventory
-  (OracleHour +$23 a day at γ = 1e-4, t = 5.1; Oracle +$28, t = 6.5). Only
+  (OracleHour +$24 a day at γ = 1e-4, t = 5.1; Oracle +$28, t = 6.4). Only
   the Oracle also reduces adverse selection per fill, by $0.39 per BTC at
   γ = 1e-2 (t = 13; $0.96 at the 60 s horizon): it widens its quotes just
   before sweeps.
 - **Sigma doesn't rescue AS.** At γ = 1e-2 the Oracle just breaks even
-  before fees (+$2.50 a day, positive on 121 of 221 days) and loses about
+  before fees (+$2.20 a day, positive on 120 of 219 days) and loses about
   $95 a day after 2 bps fees; at lower γ it loses $100–330 a day before
   fees.
 - The same pattern holds under the optimistic bound. Caveat: knowing an
@@ -360,19 +423,20 @@ Splitting the oracle's value (paired across days):
 
 Chart: `output/walkforward_event/benchmarks_raw_conservative_fee0.png`.
 
-### 7. Robustness (`src/scripts/run_robustness.py`, `src/scripts/analyze_robustness.py`)
+### 8. Robustness (`src/scripts/run_robustness.py`, `src/scripts/analyze_robustness.py`)
 
-The 41-day sample rerun with one change each (conservative fills, no fees):
+The 39-day sample (the first 41 days minus the development days) rerun with
+one change each (conservative fills, no fees):
 
 | Setting | RV P&L/day at γ=1e-3 | Estimator vs RV: \|t\| ≥ 2 / Bonferroni-significant (of 36) | Typical difference vs RV |
 |---|---|---|---|
-| base (100 ms, 50 ms latency, k refit hourly) | −$151 | 5 / 0 | 4.5% |
-| k fit once per day | −$171 | 3 / 0 | 4.4% |
-| k constant (0.46/$) | −$189 | 4 / 0 | 3.5% |
-| 250 ms decisions | −$133 | 1 / 0 | 2.9% |
-| 1 s decisions | −$117 | 1 / 0 | 4.9% |
-| 10 ms latency | −$138 | 2 / 0 | 4.5% |
-| 200 ms latency | −$164 | 1 / 0 | 3.8% |
+| base (100 ms, 50 ms latency, k refit hourly) | −$153 | 5 / 0 | 4.7% |
+| k fit once per day | −$170 | 3 / 0 | 5.2% |
+| k constant (0.46/$) | −$190 | 5 / 0 | 3.7% |
+| 250 ms decisions | −$137 | 2 / 0 | 3.3% |
+| 1 s decisions | −$118 | 1 / 0 | 5.0% |
+| 10 ms latency | −$138 | 2 / 0 | 4.6% |
+| 200 ms latency | −$166 | 1 / 0 | 3.8% |
 
 - **AS loses money in every setting, at every gamma.** Slower requoting
   loses less only because it trades less.
@@ -381,10 +445,38 @@ The 41-day sample rerun with one change each (conservative fills, no fees):
   them. With k constant, differences get smaller, not larger.
 - **Day-level risk metrics:** nothing survives the correction. One weak
   tendency: every nominally significant GARCH result on risk-adjusted P&L
-  (7 of 7) points to GARCH doing 4–14% worse than RV. All settings reuse
+  (8 of 8) points to GARCH doing 4–12% worse than RV. All settings reuse
   the same days, so that's a tendency, not a finding.
 
-### 8. Microstructure note: the signature plot
+### 9. Out-of-sample check: 180 days never used in development
+
+The same analyses on the 180 study days added after every design decision
+was made (`--days ../data/study_days_holdout.csv`):
+
+| | Main sample (219 days) | Hold-out (180 days) |
+|---|---|---|
+| RV P&L/day, γ = 1e-5 … 1e-2 | −$349, −$279, −$128, −$19 | −$350, −$266, −$123, −$18 |
+| Best forecaster (QLIKE) | HAR in every regime; RV excluded from the MCS in all three | same |
+| Estimator vs RV, \|t\| ≥ 2 / Bonferroni (of 36) | 5 / 0 | 3 / 1 |
+| Whole-day equivalence bounds | $3–12 a day | $2–12 a day |
+| Regime cells equivalent within ±10% | 27 / 36 | 28 / 36 |
+| Oracle − RV, γ = 1e-4 … 1e-2 | +$28, +$27, +$22 | +$26, +$27, +$22 |
+
+- **The conclusions hold on data that played no part in building the
+  method:** AS loses to adverse selection, HAR forecasts best, the
+  estimators don't change P&L meaningfully, and perfect foresight is worth
+  about the same.
+- **The one significant cell is the pattern flagged in section 3:** EWMA
+  in low volatility at γ = 1e-2, +$1.45 a day over RV's −$7 (t = 3.7). It's
+  a volume effect, not better forecasting: in calm markets EWMA makes about
+  45 fewer fills a day (t = −18), and since fills lose money on average,
+  fewer fills lose less; its adverse selection per fill is no better than
+  RV's. It's small in dollars, and in the full sample it's positive at every
+  γ ≥ 1e-4 but not significant.
+
+Tables: `output/walkforward_event/*_holdout.csv`.
+
+### 10. Microstructure note: the signature plot
 
 The usual warning is that bid-ask bounce inflates realized volatility at
 very short sampling intervals. On Binance perp mid-quotes the opposite
@@ -441,14 +533,17 @@ history is in the git log.
   rebates and no hedging, which is how real market makers stay profitable.
   The question here is about the volatility input, not about building a
   profitable strategy.
-- **One asset, one exchange, 221 days.** The free archive caps the period;
+- **One asset, one exchange, 219 days.** The free archive caps the period;
   small effects (~5%) in individual regimes can't be excluded (Results,
   section 4). Within the sample, the regime label partly tracks time of
   day: high-volatility hours cluster in the US session.
-- **Robustness checks use the 41-day sample.**
-- **Some settings were chosen on the two development days**, which are part
-  of the sample: refit windows and the decision/latency baseline. The
-  constant k for the robustness check uses the whole 41-day sample.
+- **Robustness checks use the 39-day sample** (the first 41 days minus the
+  development days).
+- **Design choices were made with the first 41 days' results visible**
+  (fill model, k calibration, raw sigma), though none was chosen to favor
+  an estimator. The development days are excluded, and the 180-day
+  hold-out confirms the conclusions (section 9). The constant k in the
+  robustness check is the median over the first 41 days.
 - **The oracles are upper bounds,** not achievable targets.
 - **Fee levels are approximate:** 2 bps is Binance's standard maker fee;
   check the 2023–24 schedule.
@@ -487,6 +582,8 @@ python -m scripts.select_days                      # writes data/study_days.csv 
 python -m scripts.run_walkforward --workers 2      # the study; deletes raw data after each day
 python -m scripts.analyze_walkforward              # options: --rule optimistic | --fee-bps 2 | --variant matched | --markout 60
 python -m scripts.analyze_power                    # confidence intervals, detectable effects, equivalence
+python -m scripts.analyze_walkforward --days ../data/study_days_holdout.csv   # out-of-sample check
+python -m scripts.analyze_power --days ../data/study_days_holdout.csv
 python -m scripts.run_robustness --workers 3 --dates $(tail -n +2 ../data/study_days_41.csv | cut -d, -f1)
 python -m scripts.analyze_robustness
 python -m tests.test_simulator                     # fill-rule and decomposition checks
@@ -511,7 +608,7 @@ src/
     plotting.py               chart style
   scripts/                    entry points
     check_data_quality.py     quote-gap screen for every day
-    select_days.py            study days: all weekdays that pass the screen
+    select_days.py            study days: all weekdays that pass the screen, minus development days
     run_walkforward.py        the study
     analyze_walkforward.py    main results, benchmarks, P&L decomposition, charts
     analyze_power.py          confidence intervals, detectable effects, equivalence
@@ -523,8 +620,9 @@ src/
     test_simulator.py         hand-built fill-rule and decomposition checks
   legacy/                     superseded 1-second-bar pipeline (invalid P&L;
                               kept so the history can be reproduced)
-data/study_days.csv           the 221 study days
-data/study_days_41.csv        the earlier 41-day sample (used by the robustness checks)
+data/study_days.csv           the 219 study days
+data/study_days_holdout.csv   the 180 of them added after all design decisions (out-of-sample check)
+data/study_days_41.csv        the earlier 41-day sample (robustness checks use it, minus the 2 development days)
 data/data_quality.csv         per-day quote coverage and gaps
 paper/references.bib          references for the write-up
 paper/literature_notes.md     what each reference is used for

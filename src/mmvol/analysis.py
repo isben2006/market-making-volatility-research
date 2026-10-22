@@ -22,10 +22,11 @@ REGIMES = ["low", "mid", "high"]
 STUDY_DAYS = ROOT / "data" / "study_days.csv"
 
 
-def study_files(directory, prefix: str = "blocks") -> list:
-    """Result files for the days in data/study_days.csv only, so days dropped
-    from the study (e.g. by the data-quality check) never leak into results."""
-    dates = pd.read_csv(STUDY_DAYS)["date"]
+def study_files(directory, prefix: str = "blocks", days_csv=None) -> list:
+    """Result files for the days in data/study_days.csv (or days_csv) only, so
+    days dropped from the study (e.g. by the data-quality check) never leak
+    into results."""
+    dates = pd.read_csv(days_csv or STUDY_DAYS)["date"]
     files = [directory / f"{prefix}_{d}.csv" for d in dates]
     present = [f for f in files if f.exists()]
     if len(present) < len(files):

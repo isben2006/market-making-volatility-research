@@ -20,10 +20,14 @@ Prints:
      adverse selection (the mid's move against each fill over --markout
      seconds), inventory P&L and fees, for RV, then each estimator and
      benchmark vs RV component by component.
+  6. Sigma in the quotes: how much of AS's spread sigma controls at each
+     gamma (from the AS formula), and how far each estimator moves the quotes
+     compared with the adverse selection each fill suffers.
 
-Usage (from src/): python -m scripts.analyze_walkforward [--variant raw] [--rule conservative] [--fee-bps 0] [--markout 5]
+Usage (from src/): python -m scripts.analyze_walkforward [--days ../data/study_days_holdout.csv] [--variant raw] [--rule conservative] [--fee-bps 0] [--markout 5]
 """
 import argparse
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -34,11 +38,12 @@ from mmvol.config import CLIP_SIZE, ESTIMATORS, MAIN_VARIANT, OUT, SYMBOL
 from mmvol.plotting import EST_COLORS, PALETTE, plt
 
 WF_DIR = OUT / "walkforward_event"
-FEE_SCENARIOS_BPS = [0.0, 2.0]   # gross, and ~Binance's standard maker fee (check the 2023-24 schedule)
+FEE_SCENARIOS_BPS = [0.0, 2.0]
+DAYS_CSV, TAG = None, ""  # --days: analyze another day list; its outputs get a suffix (e.g. _holdout)   # gross, and ~Binance's standard maker fee (check the 2023-24 schedule)
 
 
 def load_blocks() -> pd.DataFrame:
-    files = study_files(WF_DIR)
+    files = study_files(WF_DIR, days_csv=DAYS_CSV)
     return pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
 
 
@@ -67,7 +72,11 @@ def main():
     ap.add_argument("--rule", default="conservative", choices=["conservative", "optimistic"])
     ap.add_argument("--fee-bps", type=float, default=0.0)
     ap.add_argument("--markout", type=int, default=5, choices=[5, 60], help="adverse-selection horizon, seconds")
+    ap.add_argument("--days", default=None, help="day list CSV instead of data/study_days.csv")
     args = ap.parse_args()
+    global DAYS_CSV, TAG
+    if args.days:
+        DAYS_CSV, TAG = args.days, "_" + Path(args.days).stem.replace("study_days_", "")
 
     blocks, cuts = label_regimes(load_blocks())
     print(f"{blocks['date'].nunique()} days, {blocks.drop_duplicates(['date', 'hour']).shape[0]} scored hours; "
@@ -102,7 +111,7 @@ def main():
                                  "ppv_mean": r["mean"], "diff_vs_rv": r["diff"], "se": r["se"], "t": r["t"],
                                  "days_better": r["better"], "in_mcs": e in inc})
     summary = pd.DataFrame(all_rows)
-    out_csv = WF_DIR / f"summary_{args.variant}_{args.rule}_fee{args.fee_bps:g}.csv"
+    out_csv = WF_DIR / f"summary_{args.variant}_{args.rule}_fee{args.fee_bps:g}{TAG}.csv"
     summary.to_csv(out_csv, index=False, float_format="%.6g")  # %.6g keeps gamma=1e-05 intact
 
     for g in sorted(summary["gamma"].unique()):
@@ -140,7 +149,7 @@ def main():
     fig.suptitle(f"Event-driven walk-forward: estimator vs RV by regime ({SYMBOL}, {args.variant} sigma, "
                  f"{args.rule} fills, fee {args.fee_bps:g} bps; above 0 = earns more / loses less)", fontsize=10)
     fig.tight_layout(rect=[0, 0, 1, 0.92])
-    out_png = WF_DIR / f"regime_comparison_{args.variant}_{args.rule}_fee{args.fee_bps:g}.png"
+    out_png = WF_DIR / f"regime_comparison_{args.variant}_{args.rule}_fee{args.fee_bps:g}{TAG}.png"
     fig.savefig(out_png, dpi=130)
     print(f"[plot] {out_png}")
 
@@ -148,6 +157,7 @@ def main():
         benchmark_table(blocks, args.variant, args.rule, args.fee_bps)
     if "pnl_spread" in blocks.columns:
         decomposition_table(blocks, args.variant, args.rule, args.fee_bps, args.markout)
+        sigma_role_table(blocks, args.variant, args.rule, args.markout)
 
 
 def benchmark_table(blocks: pd.DataFrame, variant: str, rule: str, fee_bps: float):
@@ -177,7 +187,7 @@ def benchmark_table(blocks: pd.DataFrame, variant: str, rule: str, fee_bps: floa
                                for e in names if e != "RV")
                   + (f" | headroom {res['Oracle']['diff'] / abs(rv):+.0%}" if regime == "all" else ""))
     out = pd.DataFrame(rows)
-    out_csv = WF_DIR / f"benchmarks_{variant}_{rule}_fee{fee_bps:g}.csv"
+    out_csv = WF_DIR / f"benchmarks_{variant}_{rule}_fee{fee_bps:g}{TAG}.csv"
     out.to_csv(out_csv, index=False, float_format="%.6g")
     print(f"[csv] {out_csv}")
 
@@ -200,7 +210,7 @@ def benchmark_table(blocks: pd.DataFrame, variant: str, rule: str, fee_bps: floa
     fig.suptitle(f"Estimators between the benchmarks: Flat (no dynamics) and Oracle (perfect foresight) "
                  f"({SYMBOL}, {rule} fills, fee {fee_bps:g} bps; above 0 = loses less than RV)", fontsize=10)
     fig.tight_layout(rect=[0, 0, 1, 0.92])
-    out_png = WF_DIR / f"benchmarks_{variant}_{rule}_fee{fee_bps:g}.png"
+    out_png = WF_DIR / f"benchmarks_{variant}_{rule}_fee{fee_bps:g}{TAG}.png"
     fig.savefig(out_png, dpi=130)
     print(f"[plot] {out_png}")
 
@@ -254,7 +264,7 @@ def decomposition_table(blocks: pd.DataFrame, variant: str, rule: str, fee_bps: 
                         f"fees {row['fees_diff']:+5.1f}  total {row['total_diff']:+6.1f}  "
                         f"| adverse/fill {row['as_pf_diff']:+.3f} ({row['as_pf_t']:+.1f})")
         print(f"gamma {g:.0e}:\n  " + "\n  ".join(line))
-    out_csv = WF_DIR / f"decomposition_{variant}_{rule}_fee{fee_bps:g}_h{h}.csv"
+    out_csv = WF_DIR / f"decomposition_{variant}_{rule}_fee{fee_bps:g}_h{h}{TAG}.csv"
     pd.DataFrame(rows).to_csv(out_csv, index=False, float_format="%.6g")
     print(f"[csv] {out_csv}")
 
@@ -284,8 +294,48 @@ def decomposition_table(blocks: pd.DataFrame, variant: str, rule: str, fee_bps: 
     if len(sig):
         print("Bonferroni-significant per-fill adverse selection ($ per BTC, + = less damage than RV):")
         print(sig[["gamma", "regime", "estimator", "diff", "t"]].round(3).to_string(index=False))
-    out_csv = WF_DIR / f"decomposition_regimes_{variant}_{rule}_fee{fee_bps:g}_h{h}.csv"
+    out_csv = WF_DIR / f"decomposition_regimes_{variant}_{rule}_fee{fee_bps:g}_h{h}{TAG}.csv"
     cells.to_csv(out_csv, index=False, float_format="%.6g")
+    print(f"[csv] {out_csv}")
+
+
+def sigma_role_table(blocks: pd.DataFrame, variant: str, rule: str, h: int):
+    """AS quotes spread = gamma*sigma^2*tau + (2/gamma)*ln(1 + gamma/k) (Avellaneda & Stoikov 2008): sigma
+    enters only the first term. The second is computed per hour from the k in force; the rest of the quoted
+    spread is sigma's part (plus up to about one $0.10 tick from rounding the bid down and the ask up)."""
+    b = blocks[(blocks["variant"].isin([variant, "benchmark"])) & (blocks["rule"] == rule)]
+    b = b.assign(k_part=(2 / b["gamma"]) * np.log1p(b["gamma"] / b["k"]))
+    rv = b[b["estimator"] == "RV"]
+    t = rv.groupby("gamma")[["spread_mean", "k_part"]].mean()
+    t["sigma_part"] = t["spread_mean"] - t["k_part"]
+    t["sigma_share_%"] = 100 * t["sigma_part"] / t["spread_mean"]
+    # per BTC traded, each day's ratio averaged over days (as in section 5)
+    day = rv.groupby(["gamma", "date"])[["pnl_spread", f"pnl_as_{h}", "fills"]].sum()
+    btc = day["fills"] * CLIP_SIZE
+    t["spread_per_btc"] = (day["pnl_spread"] / btc).groupby("gamma").mean()
+    t["adverse_per_btc"] = (day[f"pnl_as_{h}"] / btc).groupby("gamma").mean()
+    t.index = [f"{g:.0e}" for g in t.index]
+    print(f"\n=== 6. Sigma in the quotes ({variant} sigma, {rule} fills; adverse selection over {h} s) ===")
+    print("RV. Quoted spread = sigma part (gamma*sigma^2*tau, + rounding) + k part (2/gamma*ln(1+gamma/k)); "
+          "per BTC traded: spread captured and adverse selection.")
+    print(t.round(3).to_string())
+
+    names = [e for e in [*ESTIMATORS[1:], "Oracle"] if e in set(b["estimator"])]
+    w = b.pivot_table(index=["gamma", "date", "hour"], columns="estimator", values="spread_mean")
+    rows = []
+    for g in sorted(b["gamma"].unique()):
+        wg = w.loc[g]
+        for e in names:
+            half = (wg[e] - wg["RV"]) / 2  # change in each side's distance from the mid
+            rows.append({"gamma": f"{g:.0e}", "estimator": e, "half_spread_change_mean": half.mean(),
+                         "half_spread_change_abs": half.abs().mean(),
+                         "abs_as_%_of_adverse": 100 * half.abs().mean() / abs(t.loc[f"{g:.0e}", "adverse_per_btc"])})
+    out = pd.DataFrame(rows)
+    print("\nEstimator vs RV: change in the quoted half-spread, $ per BTC (hourly averages): signed mean (bias), "
+          "mean size, and size as % of RV's adverse selection per BTC:")
+    print(out.round(3).to_string(index=False))
+    out_csv = WF_DIR / f"sigma_role_{variant}_{rule}_h{h}{TAG}.csv"
+    pd.concat([t.reset_index(names="gamma"), out], keys=["rv", "estimators"]).to_csv(out_csv, float_format="%.6g")
     print(f"[csv] {out_csv}")
 
 

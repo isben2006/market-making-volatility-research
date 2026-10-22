@@ -4,7 +4,10 @@ Pick the days for the walk-forward study.
 Downloads Binance's monthly daily-candle klines for BTCUSDT perp across the
 bookTicker window and keeps every weekday in it, except days whose archive
 data is incomplete: EXCLUDE, plus days failing the quote-gap check in
-data/data_quality.csv. Weekends are excluded: they
+data/data_quality.csv, and minus the two development days, on which
+settings were tuned. Also writes data/study_days_holdout.csv: the study
+days outside the first 41-day sample, added after every design decision
+was made, for an out-of-sample check. Weekends are excluded: they
 have much lower volume, so including them would mix a liquidity regime into
 the volatility comparison. Each day is tagged with its daily high-low range
 tercile (calm / mid / volatile) for reference.
@@ -48,6 +51,8 @@ EXCLUDE = {
     "2023-09-22": "bookTicker starts at 05:20 UTC",
 }
 OUT_PATH = ROOT / "data" / "study_days.csv"
+FIRST_SAMPLE = ROOT / "data" / "study_days_41.csv"  # the first sample; all design decisions were made on it
+HOLDOUT_PATH = ROOT / "data" / "study_days_holdout.csv"
 
 
 def load_daily_klines() -> pd.DataFrame:
@@ -85,9 +90,17 @@ def main():
                                    f"longest {r.max_gap_s:.0f} s at {r.max_gap_at_h:.2f}h")
         else:
             print(f"[warn] {QUALITY_PATH.name} missing: run scripts.check_data_quality, then rerun this")
+        for d in ALWAYS_INCLUDE:
+            exclude[d] = "development day: settings were tuned on it"
         for d, why in sorted(exclude.items()):
             print(f"excluded {d}: {why}")
         chosen = wd[~wd["date_str"].isin(exclude)]
+        # hold-out: days added after every design decision was made (not in the original 41-day sample)
+        first = pd.read_csv(FIRST_SAMPLE)["date"]
+        holdout = chosen[~chosen["date_str"].isin(first)]
+        holdout.sort_values("date")[["date_str", "weekday", "range_pct", "volume", "tercile"]].rename(
+            columns={"date_str": "date"}).to_csv(HOLDOUT_PATH, index=False, float_format="%.4f")
+        print(f"hold-out (not in {FIRST_SAMPLE.name}): {len(holdout)} days [csv] {HOLDOUT_PATH}")
     else:
         rng = np.random.default_rng(args.seed)
         picks = []
