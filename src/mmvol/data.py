@@ -79,6 +79,28 @@ def load_events(date: str):
     return book, trades
 
 
+GAP_SEC = 30  # a quote gap this long with trades inside it is a recording failure (a healthy book updates many times a second)
+
+
+def book_quality(book: dict, trades: dict) -> dict:
+    """Coverage of the bookTicker data and its gaps. Binance's archive has holes:
+    stretches with no quote updates while trades keep printing (e.g. 14 minutes
+    and 268,529 trades on 2024-01-03). The simulator would quote around a frozen
+    price through them and get filled on every trade, so days with such gaps
+    are excluded (scripts/check_data_quality.py)."""
+    bts = np.asarray(book["ts"], dtype=float)
+    tts = np.sort(np.r_[trades["sell_ts"], trades["buy_ts"]].astype(float))
+    edges = np.r_[0.0, bts, DAY_SECONDS * 1000.0]  # day start and end count as gap edges
+    gaps = np.diff(edges)
+    i = int(np.argmax(gaps))
+    long_gaps = np.where(gaps > GAP_SEC * 1000)[0]
+    trades_in = [int(np.searchsorted(tts, edges[j + 1]) - np.searchsorted(tts, edges[j])) for j in long_gaps]
+    return {"book_first_h": bts[0] / 3.6e6, "book_last_h": bts[-1] / 3.6e6,
+            "max_gap_s": gaps[i] / 1000, "max_gap_at_h": edges[i] / 3.6e6,
+            "n_long_gaps": len(long_gaps), "trades_in_long_gaps": int(sum(trades_in)),
+            "ok": not any(n > 0 for n in trades_in)}
+
+
 def mid_1s_from_book(book: dict, index: pd.DatetimeIndex) -> pd.Series:
     """Last mid of each second (forward-filled, back-filled before the first
     update). Identical to load_book_1s's mid, without reading the CSV again."""

@@ -16,9 +16,24 @@ import numpy as np
 import pandas as pd
 from arch.bootstrap import MCS
 
-from mmvol.config import CLIP_SIZE, ESTIMATORS
+from mmvol.config import CLIP_SIZE, ESTIMATORS, ROOT
 
 REGIMES = ["low", "mid", "high"]
+STUDY_DAYS = ROOT / "data" / "study_days.csv"
+
+
+def study_files(directory, prefix: str = "blocks") -> list:
+    """Result files for the days in data/study_days.csv only, so days dropped
+    from the study (e.g. by the data-quality check) never leak into results."""
+    dates = pd.read_csv(STUDY_DAYS)["date"]
+    files = [directory / f"{prefix}_{d}.csv" for d in dates]
+    present = [f for f in files if f.exists()]
+    if len(present) < len(files):
+        print(f"[note] {directory.name}: {len(files) - len(present)} of {len(files)} study days have no "
+              f"{prefix} file")
+    if not present:
+        raise SystemExit(f"no {prefix} files for the study days in {directory}")
+    return present
 MCS_SIZE = 0.10
 
 

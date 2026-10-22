@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from mmvol.analysis import REGIMES, label_regimes, mcs_set, paired, units
+from mmvol.analysis import REGIMES, label_regimes, mcs_set, paired, study_files, units
 from mmvol.config import CLIP_SIZE, ESTIMATORS, MAIN_VARIANT, OUT, SYMBOL
 from mmvol.plotting import EST_COLORS, PALETTE, plt
 
@@ -38,9 +38,7 @@ FEE_SCENARIOS_BPS = [0.0, 2.0]   # gross, and ~Binance's standard maker fee (che
 
 
 def load_blocks() -> pd.DataFrame:
-    files = sorted(WF_DIR.glob("blocks_*.csv"))
-    if not files:
-        raise SystemExit(f"no results in {WF_DIR}; run scripts.run_walkforward first")
+    files = study_files(WF_DIR)
     return pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
 
 

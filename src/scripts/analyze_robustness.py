@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from mmvol.analysis import REGIMES, label_regimes, mcs_set, paired, units
+from mmvol.analysis import REGIMES, label_regimes, mcs_set, paired, study_files, units
 from mmvol.config import ESTIMATORS, OUT
 
 RB_DIR = OUT / "robustness_event"
@@ -28,9 +28,7 @@ ALPHA = 0.05
 
 
 def load(prefix: str) -> pd.DataFrame:
-    files = sorted(RB_DIR.glob(f"{prefix}_*.csv"))
-    if not files:
-        raise SystemExit(f"no {prefix} files in {RB_DIR}; run scripts.run_robustness first")
+    files = study_files(RB_DIR, prefix)
     return pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
 
 

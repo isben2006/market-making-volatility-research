@@ -1,0 +1,1 @@
+{"date": "2023-05-26", "seconds": 48.9, "k_median": 0.48275829998339104, "k_min": 0.4338739733181432, "k_max": 0.7112464799637347, "rejected_mean": 1734.2613636363637, "garch_fits": 21, "garch_failed": 0, "garch_persistence_mean": 0.9559037644548406, "har_fits": 21, "har_floored_s": 0}
