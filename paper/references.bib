@@ -1,6 +1,7 @@
 % References for the write-up. See literature_notes.md for what each one is
-% used for and its verification status. Entries marked "from memory" in the
-% notes should have their volume/pages/DOI checked before submission.
+% used for. Bibliographic details checked 2026-10-22 against Crossref (journal
+% articles), arXiv, and publisher or library records (books, magazine);
+% literature_notes.md gives the status of each.
 
 % ---- Market making model ----------------------------------------------------
 
@@ -11,7 +12,8 @@
   year    = {2008},
   volume  = {8},
   number  = {3},
-  pages   = {217--224}
+  pages   = {217--224},
+  doi     = {10.1080/14697680701381228}
 }
 
 @article{gueant2013,
@@ -21,7 +23,8 @@
   year    = {2013},
   volume  = {7},
   number  = {4},
-  pages   = {477--507}
+  pages   = {477--507},
+  doi     = {10.1007/s11579-012-0087-0}
 }
 
 @article{gueant2017,
@@ -32,7 +35,50 @@
   volume  = {24},
   number  = {2},
   pages   = {112--154},
-  note    = {arXiv:1605.01862}
+  doi     = {10.1080/1350486X.2017.1342552}
+}
+
+@book{cartea2015,
+  author    = {Cartea, {\'A}lvaro and Jaimungal, Sebastian and Penalva, Jos{\'e}},
+  title     = {Algorithmic and High-Frequency Trading},
+  publisher = {Cambridge University Press},
+  address   = {Cambridge},
+  year      = {2015},
+  isbn      = {978-1-107-09114-6}
+}
+
+@article{cartea2017,
+  author  = {Cartea, {\'A}lvaro and Donnelly, Ryan and Jaimungal, Sebastian},
+  title   = {Algorithmic trading with model uncertainty},
+  journal = {SIAM Journal on Financial Mathematics},
+  year    = {2017},
+  volume  = {8},
+  number  = {1},
+  pages   = {635--671},
+  doi     = {10.1137/16M106282X}
+}
+
+@article{yang2020stochvol,
+  author  = {Yang, Qing-Qing and Ching, Wai-Ki and Gu, Jiawen and Siu, Tak-Kuen},
+  title   = {Trading strategy with stochastic volatility in a limit order book market},
+  journal = {Decisions in Economics and Finance},
+  year    = {2020},
+  volume  = {43},
+  number  = {1},
+  pages   = {277--301},
+  doi     = {10.1007/s10203-020-00278-8},
+  note    = {Preprint arXiv:1602.00358 (2016)}
+}
+
+@article{stoikov2018,
+  author  = {Stoikov, Sasha},
+  title   = {The micro-price: a high-frequency estimator of future prices},
+  journal = {Quantitative Finance},
+  year    = {2018},
+  volume  = {18},
+  number  = {12},
+  pages   = {1959--1966},
+  doi     = {10.1080/14697688.2018.1489139}
 }
 
 @article{falcesmarin2022,
@@ -46,11 +92,28 @@
   doi     = {10.1371/journal.pone.0277042}
 }
 
-@misc{stochvol_lob2016,
-  title        = {Trading Strategy with Stochastic Volatility in a Limit Order Book Market},
-  year         = {2016},
-  howpublished = {arXiv:1602.00358},
-  note         = {Authors to be filled in from the arXiv page}
+% ---- Market microstructure: adverse selection and spreads -------------------
+
+@article{glostenmilgrom1985,
+  author  = {Glosten, Lawrence R. and Milgrom, Paul R.},
+  title   = {Bid, ask and transaction prices in a specialist market with heterogeneously informed traders},
+  journal = {Journal of Financial Economics},
+  year    = {1985},
+  volume  = {14},
+  number  = {1},
+  pages   = {71--100},
+  doi     = {10.1016/0304-405X(85)90044-3}
+}
+
+@article{huangstoll1996,
+  author  = {Huang, Roger D. and Stoll, Hans R.},
+  title   = {Dealer versus auction markets: a paired comparison of execution costs on {NASDAQ} and the {NYSE}},
+  journal = {Journal of Financial Economics},
+  year    = {1996},
+  volume  = {41},
+  number  = {3},
+  pages   = {313--357},
+  doi     = {10.1016/0304-405X(95)00867-E}
 }
 
 % ---- Volatility estimators and models ---------------------------------------
@@ -62,7 +125,19 @@
   year    = {1998},
   volume  = {39},
   number  = {4},
-  pages   = {885--905}
+  pages   = {885--905},
+  doi     = {10.2307/2527343}
+}
+
+@article{andersen2000,
+  author  = {Andersen, Torben G. and Bollerslev, Tim and Diebold, Francis X. and Labys, Paul},
+  title   = {Great realizations},
+  journal = {Risk},
+  year    = {2000},
+  volume  = {13},
+  number  = {3},
+  pages   = {105--108},
+  note    = {Introduces the volatility signature plot}
 }
 
 @article{bollerslev1986,
@@ -72,13 +147,15 @@
   year    = {1986},
   volume  = {31},
   number  = {3},
-  pages   = {307--327}
+  pages   = {307--327},
+  doi     = {10.1016/0304-4076(86)90063-1}
 }
 
 @techreport{riskmetrics1996,
   author      = {{J.P. Morgan/Reuters}},
   title       = {RiskMetrics -- Technical Document},
   institution = {J.P. Morgan/Reuters},
+  address     = {New York},
   year        = {1996},
   edition     = {4th}
 }
@@ -90,7 +167,8 @@
   year    = {2009},
   volume  = {7},
   number  = {2},
-  pages   = {174--196}
+  pages   = {174--196},
+  doi     = {10.1093/jjfinec/nbp001}
 }
 
 @article{bns2004,
@@ -100,7 +178,8 @@
   year    = {2004},
   volume  = {2},
   number  = {1},
-  pages   = {1--37}
+  pages   = {1--37},
+  doi     = {10.1093/jjfinec/nbh001}
 }
 
 @article{parkinson1980,
@@ -110,7 +189,8 @@
   year    = {1980},
   volume  = {53},
   number  = {1},
-  pages   = {61--65}
+  pages   = {61--65},
+  doi     = {10.1086/296071}
 }
 
 @article{garmanklass1980,
@@ -120,10 +200,11 @@
   year    = {1980},
   volume  = {53},
   number  = {1},
-  pages   = {67--78}
+  pages   = {67--78},
+  doi     = {10.1086/296072}
 }
 
-% ---- Estimator comparisons --------------------------------------------------
+% ---- Forecast evaluation and estimator comparisons --------------------------
 
 @article{hansenlunde2005,
   author  = {Hansen, Peter R. and Lunde, Asger},
@@ -132,7 +213,8 @@
   year    = {2005},
   volume  = {20},
   number  = {7},
-  pages   = {873--889}
+  pages   = {873--889},
+  doi     = {10.1002/jae.800}
 }
 
 @article{lps2015,
@@ -142,7 +224,8 @@
   year    = {2015},
   volume  = {187},
   number  = {1},
-  pages   = {293--311}
+  pages   = {293--311},
+  doi     = {10.1016/j.jeconom.2015.02.008}
 }
 
 @article{hln2011,
@@ -152,7 +235,8 @@
   year    = {2011},
   volume  = {79},
   number  = {2},
-  pages   = {453--497}
+  pages   = {453--497},
+  doi     = {10.3982/ECTA5771}
 }
 
 @article{patton2011,
@@ -162,7 +246,76 @@
   year    = {2011},
   volume  = {160},
   number  = {1},
-  pages   = {246--256}
+  pages   = {246--256},
+  doi     = {10.1016/j.jeconom.2010.03.034}
+}
+
+@article{fleming2001,
+  author  = {Fleming, Jeff and Kirby, Chris and Ostdiek, Barbara},
+  title   = {The economic value of volatility timing},
+  journal = {Journal of Finance},
+  year    = {2001},
+  volume  = {56},
+  number  = {1},
+  pages   = {329--352},
+  doi     = {10.1111/0022-1082.00327}
+}
+
+% ---- Statistical inference --------------------------------------------------
+
+@article{lakens2017,
+  author  = {Lakens, Dani{\"e}l},
+  title   = {Equivalence tests: a practical primer for t tests, correlations, and meta-analyses},
+  journal = {Social Psychological and Personality Science},
+  year    = {2017},
+  volume  = {8},
+  number  = {4},
+  pages   = {355--362},
+  doi     = {10.1177/1948550617697177}
+}
+
+@article{schuirmann1987,
+  author  = {Schuirmann, Donald J.},
+  title   = {A comparison of the two one-sided tests procedure and the power approach for assessing the equivalence of average bioavailability},
+  journal = {Journal of Pharmacokinetics and Biopharmaceutics},
+  year    = {1987},
+  volume  = {15},
+  number  = {6},
+  pages   = {657--680},
+  doi     = {10.1007/BF01068419}
+}
+
+@article{hoenigheisey2001,
+  author  = {Hoenig, John M. and Heisey, Dennis M.},
+  title   = {The abuse of power: the pervasive fallacy of power calculations for data analysis},
+  journal = {The American Statistician},
+  year    = {2001},
+  volume  = {55},
+  number  = {1},
+  pages   = {19--24},
+  doi     = {10.1198/000313001300339897}
+}
+
+@article{berger1982,
+  author  = {Berger, Roger L.},
+  title   = {Multiparameter hypothesis testing and acceptance sampling},
+  journal = {Technometrics},
+  year    = {1982},
+  volume  = {24},
+  number  = {4},
+  pages   = {295--300},
+  doi     = {10.2307/1267823}
+}
+
+% ---- Backtesting ------------------------------------------------------------
+
+@book{lopezdeprado2018,
+  author    = {L{\'o}pez de Prado, Marcos},
+  title     = {Advances in Financial Machine Learning},
+  publisher = {Wiley},
+  address   = {Hoboken, NJ},
+  year      = {2018},
+  isbn      = {978-1-119-48208-6}
 }
 
 % ---- Microstructure noise and sampling --------------------------------------
@@ -174,7 +327,8 @@
   year    = {2006},
   volume  = {79},
   number  = {3},
-  pages   = {655--692}
+  pages   = {655--692},
+  doi     = {10.1016/j.jfineco.2005.01.005}
 }
 
 @article{bandirussell2008,
@@ -184,7 +338,8 @@
   year    = {2008},
   volume  = {75},
   number  = {2},
-  pages   = {339--369}
+  pages   = {339--369},
+  doi     = {10.1111/j.1467-937X.2008.00474.x}
 }
 
 @article{hansenlunde2006,
@@ -194,7 +349,8 @@
   year    = {2006},
   volume  = {24},
   number  = {2},
-  pages   = {127--161}
+  pages   = {127--161},
+  doi     = {10.1198/073500106000000071}
 }
 
 @article{griffinoomen2008,
@@ -203,7 +359,7 @@
   journal = {Econometric Reviews},
   year    = {2008},
   volume  = {27},
-  number  = {3},
+  number  = {1--3},
   pages   = {230--253},
   doi     = {10.1080/07474930701873341}
 }
@@ -215,7 +371,8 @@
   year    = {2005},
   volume  = {100},
   number  = {472},
-  pages   = {1394--1411}
+  pages   = {1394--1411},
+  doi     = {10.1198/016214505000000169}
 }
 
 @article{bnhls2008,
@@ -225,7 +382,8 @@
   year    = {2008},
   volume  = {76},
   number  = {6},
-  pages   = {1481--1536}
+  pages   = {1481--1536},
+  doi     = {10.3982/ECTA6495}
 }
 
 @article{jacod2009,
@@ -235,7 +393,8 @@
   year    = {2009},
   volume  = {119},
   number  = {7},
-  pages   = {2249--2276}
+  pages   = {2249--2276},
+  doi     = {10.1016/j.spa.2008.11.004}
 }
 
 % ---- Crypto-specific evidence -----------------------------------------------
@@ -260,11 +419,16 @@
   doi     = {10.1016/j.ribaf.2021.101540}
 }
 
-@misc{btcjumps2017,
-  title        = {High-Frequency Jump Analysis of the {Bitcoin} Market},
-  year         = {2017},
-  howpublished = {arXiv:1704.08175},
-  note         = {Authors to be filled in from the arXiv page}
+@article{scaillet2020,
+  author  = {Scaillet, Olivier and Treccani, Adrien and Trevisan, Christopher},
+  title   = {High-frequency jump analysis of the {Bitcoin} market},
+  journal = {Journal of Financial Econometrics},
+  year    = {2020},
+  volume  = {18},
+  number  = {2},
+  pages   = {209--232},
+  doi     = {10.1093/jjfinec/nby013},
+  note    = {Preprint arXiv:1704.08175 (2017)}
 }
 
 % ---- Practitioner implementation --------------------------------------------

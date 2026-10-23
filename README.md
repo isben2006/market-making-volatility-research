@@ -25,7 +25,7 @@ days that were never used while developing the method.
 2. **But they don't change market-making P&L.** None of the 36 estimator
    comparisons (3 estimators × 3 regimes × 4 risk aversions) survives a
    multiple-testing correction, here or in any of 6 robustness settings
-   (k calibration, decision speed, latency; run on a 39-day sample). The
+   (k calibration, decision speed, latency). The
    one exception is small: in calm markets EWMA loses slightly less than RV
    (about $1.50 a day at γ = 1e-2, significant on the out-of-sample days),
    because it trades a little less.
@@ -194,14 +194,16 @@ OracleHour → Oracle is the value of also knowing its timing within the hour.
 - **Precision of the null** (`src/scripts/analyze_power.py`): 95% confidence
   intervals; the minimum detectable effect (the smallest true effect the
   study had 80% power to detect); and two one-sided tests (TOST) for
-  equivalence, reported as the smallest margin at which equivalence holds,
-  so no margin has to be chosen after seeing the data.
+  equivalence. Lakens (2017) recommends fixing the equivalence margin in
+  advance; this analysis was added after the results were known, so instead
+  of choosing a margin it reports the smallest margin at which equivalence
+  holds, and compares that with an economic benchmark: what perfect
+  volatility foresight is worth.
 
 ## Results
 
 All results: 219 days, raw sigma, conservative fills, no fees, unless
-stated. Robustness (section 8) uses the earlier 41-day sample minus the
-development days (39 days).
+stated.
 
 ### 1. AS economics (baseline)
 
@@ -425,28 +427,34 @@ Chart: `output/walkforward_event/benchmarks_raw_conservative_fee0.png`.
 
 ### 8. Robustness (`src/scripts/run_robustness.py`, `src/scripts/analyze_robustness.py`)
 
-The 39-day sample (the first 41 days minus the development days) rerun with
-one change each (conservative fills, no fees):
+The 219 days rerun with one change each (conservative fills, no fees):
 
 | Setting | RV P&L/day at γ=1e-3 | Estimator vs RV: \|t\| ≥ 2 / Bonferroni-significant (of 36) | Typical difference vs RV |
 |---|---|---|---|
-| base (100 ms, 50 ms latency, k refit hourly) | −$153 | 5 / 0 | 4.7% |
-| k fit once per day | −$170 | 3 / 0 | 5.2% |
-| k constant (0.46/$) | −$190 | 5 / 0 | 3.7% |
-| 250 ms decisions | −$137 | 2 / 0 | 3.3% |
-| 1 s decisions | −$118 | 1 / 0 | 5.0% |
-| 10 ms latency | −$138 | 2 / 0 | 4.6% |
-| 200 ms latency | −$166 | 1 / 0 | 3.8% |
+| base (100 ms, 50 ms latency, k refit hourly) | −$128 | 5 / 0 | 2.0% |
+| k fit once per day | −$142 | 5 / 0 | 1.9% |
+| k constant (0.45/$, the median hourly fit) | −$162 | 5 / 0 | 1.7% |
+| 250 ms decisions | −$117 | 1 / 0 | 1.8% |
+| 1 s decisions | −$98 | 3 / 0 | 1.4% |
+| 10 ms latency | −$110 | 7 / 0 | 3.2% |
+| 200 ms latency | −$143 | 1 / 0 | 1.8% |
+
+None of the 252 P&L comparisons survives Bonferroni.
 
 - **AS loses money in every setting, at every gamma.** Slower requoting
   loses less only because it trades less.
 - **Holding k constant doesn't reveal hidden estimator differences.** Hourly
   k carries volatility information of its own, so it could have masked
   them. With k constant, differences get smaller, not larger.
-- **Day-level risk metrics:** nothing survives the correction. One weak
-  tendency: every nominally significant GARCH result on risk-adjusted P&L
-  (8 of 8) points to GARCH doing 4–12% worse than RV. All settings reuse
-  the same days, so that's a tendency, not a finding.
+- **Day-level risk metrics differ slightly, mostly for HAR.** 22 of 252
+  risk comparisons survive Bonferroni, 18 of them HAR's, consistently across
+  settings: at γ ≤ 1e-4 HAR's Sharpe-style ratio is 4–6% less negative than
+  RV's, but its maximum drawdown is 3–5% deeper; at γ = 1e-2 its drawdown is
+  6–7% shallower. So HAR trades a little more smoothly but with slightly
+  deeper losing streaks at low γ. The effects are small and don't change
+  P&L; the remaining 4 are EWMA (2) and GARCH (2), with no pattern. All
+  settings reuse the same days, so the settings aren't independent
+  replications.
 
 ### 9. Out-of-sample check: 180 days never used in development
 
@@ -537,13 +545,11 @@ history is in the git log.
   small effects (~5%) in individual regimes can't be excluded (Results,
   section 4). Within the sample, the regime label partly tracks time of
   day: high-volatility hours cluster in the US session.
-- **Robustness checks use the 39-day sample** (the first 41 days minus the
-  development days).
 - **Design choices were made with the first 41 days' results visible**
   (fill model, k calibration, raw sigma), though none was chosen to favor
   an estimator. The development days are excluded, and the 180-day
   hold-out confirms the conclusions (section 9). The constant k in the
-  robustness check is the median over the first 41 days.
+  robustness check is the median hourly fit over the whole sample.
 - **The oracles are upper bounds,** not achievable targets.
 - **Fee levels are approximate:** 2 bps is Binance's standard maker fee;
   check the 2023–24 schedule.
@@ -584,7 +590,7 @@ python -m scripts.analyze_walkforward              # options: --rule optimistic 
 python -m scripts.analyze_power                    # confidence intervals, detectable effects, equivalence
 python -m scripts.analyze_walkforward --days ../data/study_days_holdout.csv   # out-of-sample check
 python -m scripts.analyze_power --days ../data/study_days_holdout.csv
-python -m scripts.run_robustness --workers 3 --dates $(tail -n +2 ../data/study_days_41.csv | cut -d, -f1)
+python -m scripts.run_robustness --workers 3       # the study days, one setting changed at a time
 python -m scripts.analyze_robustness
 python -m tests.test_simulator                     # fill-rule and decomposition checks
 
@@ -622,7 +628,7 @@ src/
                               kept so the history can be reproduced)
 data/study_days.csv           the 219 study days
 data/study_days_holdout.csv   the 180 of them added after all design decisions (out-of-sample check)
-data/study_days_41.csv        the earlier 41-day sample (robustness checks use it, minus the 2 development days)
+data/study_days_41.csv        the earlier 41-day sample (all design decisions were made on it)
 data/data_quality.csv         per-day quote coverage and gaps
 paper/references.bib          references for the write-up
 paper/literature_notes.md     what each reference is used for

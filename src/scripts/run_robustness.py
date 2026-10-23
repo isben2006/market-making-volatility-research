@@ -1,7 +1,7 @@
 """
 Robustness checks for the walk-forward study (scripts/run_walkforward.py).
 
-Same 41 days, regimes, estimators and gammas, the main sigma variant
+Same study days, regimes, estimators and gammas, the main sigma variant
 (config.MAIN_VARIANT, raw) and the conservative fill rule only (the
 optimistic bound and level-matched sigma were shown to give the same
 conclusions). Each config changes one thing:
@@ -42,7 +42,7 @@ from mmvol.config import (
 from mmvol.simulator import calibrate_k_walkforward, prepare_intervals, run_event_sim
 from mmvol.walkforward import GAMMAS, build_sigmas, decision_sigmas, load_day, score_blocks
 
-K_CONST = 0.46
+K_CONST = 0.45  # median hourly k over the 219 study days (0.46 over the first 41)
 RB_DIR = OUT / "robustness_event"
 PNL_BUCKET_SEC = 300
 # config name -> (decision_ms, latency_ms); the k variants share the base pass
