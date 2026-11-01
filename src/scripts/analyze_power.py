@@ -7,8 +7,7 @@ whole days (12 cells). Per cell:
 
   ci95         95% confidence interval of the mean difference.
   mde          minimum detectable effect: the smallest true difference the
-               study had 80% power to detect, two-sided at 5%, and at the
-               Bonferroni level used in the main comparison (5% / 36).
+               study had 80% power to detect, two-sided at 5%.
                mde = (t_{1-a/2} + t_{power}) x SE, with t quantiles at n-1 df.
   equiv_bound  the smallest margin D for which a TOST equivalence test at 5%
                passes, i.e. the 90% CI lies inside [-D, +D]:
@@ -20,10 +19,6 @@ Scale: $ per day x regime unit, and % of RV's spread captured in the same
 cell (the market maker's gross revenue; unlike net P&L it's never near zero).
 Whole days are also compared to the Oracle benchmark's gain over RV: what
 perfect volatility foresight is worth.
-
-Equivalence for all cells at once needs each cell's TOST to pass at 5%; no
-multiplicity correction is needed for that joint claim (intersection-union
-principle, Berger 1982). Significance claims (the mde at 5% / 36) do need it.
 
 Usage (from src/): python -m scripts.analyze_power [--days ../data/study_days_holdout.csv] [--rule conservative] [--fee-bps 0]
 """
@@ -40,7 +35,6 @@ from mmvol.config import ESTIMATORS, MAIN_VARIANT, OUT
 WF_DIR = OUT / "walkforward_event"
 POWER = 0.80
 ALPHA = 0.05
-N_CELLS = 36  # 3 estimators x 3 regimes x 4 gammas: the main comparison's Bonferroni family
 
 
 def load(rule: str, fee_bps: float, days_csv=None) -> pd.DataFrame:
@@ -60,12 +54,11 @@ def cell_stats(d: pd.Series, scale: float) -> dict:
     mean, se = d.mean(), d.std(ddof=1) / np.sqrt(n)
     t95, t90 = stats.t.ppf(1 - ALPHA / 2, n - 1), stats.t.ppf(1 - ALPHA, n - 1)
     t_pow = stats.t.ppf(POWER, n - 1)
-    t_bonf = stats.t.ppf(1 - ALPHA / (2 * N_CELLS), n - 1)
     lo90, hi90 = mean - t90 * se, mean + t90 * se
     row = {"n_days": n, "diff": mean, "se": se, "ci95_lo": mean - t95 * se, "ci95_hi": mean + t95 * se,
-           "mde": (t95 + t_pow) * se, "mde_bonf": (t_bonf + t_pow) * se,
+           "mde": (t95 + t_pow) * se,
            "equiv_bound": max(abs(lo90), abs(hi90)), "rv_spread": scale}
-    for key in ["diff", "ci95_lo", "ci95_hi", "mde", "mde_bonf", "equiv_bound"]:
+    for key in ["diff", "ci95_lo", "ci95_hi", "mde", "equiv_bound"]:
         row[f"{key}_pct"] = 100 * row[key] / scale
     return row
 
@@ -100,23 +93,22 @@ def main():
     pd.set_option("display.width", 220)
     print(f"{u.index.unique('date').size} days; {MAIN_VARIANT} sigma, {args.rule} fills, fee {args.fee_bps:g} bps. "
           "Estimator - RV, P&L in $ per day x regime unit; % = of RV's spread captured in that cell.")
-    print(f"mde: 80% power, two-sided 5% / Bonferroni 5%/{N_CELLS}. "
+    print("mde: 80% power, two-sided 5%. "
           "equiv: smallest margin passing a 5% TOST (90% CI inside +-margin).\n")
     show = res.copy()
     show["gamma"] = show["gamma"].map(lambda g: f"{g:.0e}")
     show["ci95 $"] = [f"[{lo:+.1f}, {hi:+.1f}]" for lo, hi in zip(show["ci95_lo"], show["ci95_hi"])]
     show["ci95 %"] = [f"[{lo:+.1f}, {hi:+.1f}]" for lo, hi in zip(show["ci95_lo_pct"], show["ci95_hi_pct"])]
-    for c in ["mde", "mde_bonf", "equiv_bound"]:
+    for c in ["mde", "equiv_bound"]:
         show[f"{c} $ (%)"] = [f"{v:.1f} ({p:.1f}%)" for v, p in zip(show[c], show[f"{c}_pct"])]
     cols = ["gamma", "regime", "estimator", "n_days", "rv_pnl", "rv_spread", "diff", "ci95 $", "ci95 %",
-            "mde $ (%)", "mde_bonf $ (%)", "equiv_bound $ (%)"]
+            "mde $ (%)", "equiv_bound $ (%)"]
     print(show[cols].round(1).to_string(index=False))
 
     cells = res[res["regime"] != "all"]
     whole = res[res["regime"] == "all"]
     print(f"\nSummary over the {len(cells)} regime x gamma cells (% of RV's spread captured):")
-    for c, label in [("mde_pct", "mde (5%)"), ("mde_bonf_pct", "mde (Bonferroni)"),
-                     ("equiv_bound_pct", "equivalence bound")]:
+    for c, label in [("mde_pct", "mde (5%)"), ("equiv_bound_pct", "equivalence bound")]:
         q = cells[c].quantile([0.5, 0.9, 1.0])
         print(f"  {label:18s} median {q[0.5]:5.1f}%  90th pct {q[0.9]:5.1f}%  max {q[1.0]:5.1f}%")
     for m in [5, 10, 20]:

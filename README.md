@@ -115,7 +115,7 @@ are burn-in; scoring starts at 03:00 UTC.
 ### Benchmarks
 
 Not estimators: they bracket the four, run through the same simulator, and
-are kept out of the estimator comparisons and the Model Confidence Set.
+are kept out of the estimator comparisons.
 
 | Benchmark | Sigma | Tradable? |
 |---|---|---|
@@ -188,9 +188,10 @@ OracleHour → Oracle is the value of also knowing its timing within the hour.
     inventory, and a Sharpe-style ratio of 5-minute P&L changes.
 - **Inference:** the unit is day × regime, since hours within a day share
   one price path and carry inventory over. Each estimator is compared to RV
-  with paired tests across days, a Bonferroni correction over the 36
-  comparisons, and the 10% Model Confidence Set (Hansen, Lunde & Nason
-  2011).
+  with paired tests across days and a Bonferroni correction over the 36
+  comparisons. For forecast accuracy only, the 10% Model Confidence Set
+  (Hansen, Lunde & Nason 2011) gives the estimators statistically tied for
+  the lowest QLIKE.
 - **Precision of the null** (`src/scripts/analyze_power.py`): 95% confidence
   intervals; the minimum detectable effect (the smallest true effect the
   study had 80% power to detect); and two one-sided tests (TOST) for
@@ -275,7 +276,7 @@ Whole days, estimator − RV in $/day:
   (median 3.7%).
 - **By regime** (36 cells, as % of RV's spread captured in that cell):
   equivalence holds within ±5% in 14 cells, ±10% in 27 and ±20% in 35. The
-  median minimum detectable effect is 7.5% (10.9% at the Bonferroni level).
+  median minimum detectable effect is 7.5%.
   The loosest cells are in low volatility and at γ = 1e-2, where revenue is
   small.
 - **Sample size:** for effects of 10% of spread revenue the sample is

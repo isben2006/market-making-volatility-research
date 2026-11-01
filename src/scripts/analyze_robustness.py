@@ -6,9 +6,8 @@ Per config:
   - Estimator vs RV on P&L per unit vol, within each regime x gamma
     (36 comparisons): how many reach |t| >= 2, how many survive a
     Bonferroni correction across the 36 (two-sided p < 0.05/36, t-dist
-    with n_days - 1 df), how many estimators fall out of the 10% Model
-    Confidence Set, and the typical size of differences relative to RV's
-    level.
+    with n_days - 1 df), and the typical size of differences relative to
+    RV's level.
   - Day-level risk (max drawdown, P&L to mean absolute inventory, Sharpe-
     style ratio of 5-minute P&L changes): paired differences vs RV across
     days for each gamma, with the same Bonferroni threshold.
@@ -19,7 +18,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from mmvol.analysis import REGIMES, label_regimes, mcs_set, paired, study_files, units
+from mmvol.analysis import REGIMES, label_regimes, paired, study_files, units
 from mmvol.config import ESTIMATORS, OUT
 
 RB_DIR = OUT / "robustness_event"
@@ -61,18 +60,16 @@ def main():
         for g in sorted(b["gamma"].unique()):
             u = units(b[b["gamma"] == g], 0.0)
             for regime in REGIMES:
-                res, wide = paired(u, "pnl_per_vol", regime)
-                inc = mcs_set(wide, -1.0)
+                res, _ = paired(u, "pnl_per_vol", regime)
                 for e in ESTIMATORS[1:]:
                     r = res[e]
                     p = p_two_sided(r["t"], r["n"])
                     tests.append({"config": cfg, "gamma": g, "regime": regime, "estimator": e, "diff": r["diff"],
-                                  "rv_level": res["RV"]["mean"], "t": r["t"], "p": p, "in_mcs": e in inc})
+                                  "rv_level": res["RV"]["mean"], "t": r["t"], "p": p})
         t = pd.DataFrame(tests)
         bonf = ALPHA / len(t)
         cmp_rows.append({"config": cfg, "comparisons": len(t), "|t|>=2": int((t["t"].abs() >= 2).sum()),
                          "Bonferroni-significant": int((t["p"] < bonf).sum()),
-                         "out of MCS": int((~t["in_mcs"]).sum()),
                          "median |diff| / |RV level|": f"{(t['diff'].abs() / t['rv_level'].abs()).median():.1%}"})
         sig_rows += t[t["p"] < bonf].to_dict("records")
 

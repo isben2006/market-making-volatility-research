@@ -99,7 +99,7 @@ project scores standard estimators on market-making outcomes. State it as
 | Key | Status | Use in the paper |
 |---|---|---|
 | `patton2011` | bib checked; content checked (secondary sources) | MSE and QLIKE are the common loss functions that rank variance forecasts consistently even when the proxy is noisy. QLIKE is less sensitive than MSE to large right-tail observations, so a few extreme periods don't dominate it; it penalizes under-forecasts more than over-forecasts. Patton & Sheppard (2009), a handbook chapter, recommend QLIKE over MSE; add that reference if cited. |
-| `hln2011` | bib checked; content checked (abstract) | A set built to contain the best model with a given confidence, like a confidence interval for models; uninformative data give a large set. Model Confidence Set, used via `arch.bootstrap.MCS` at the 10% level to find the estimators statistically tied for best within each regime. |
+| `hln2011` | bib checked; content checked (abstract) | A set built to contain the best model with a given confidence, like a confidence interval for models; uninformative data give a large set. Model Confidence Set, used via `arch.bootstrap.MCS` at the 10% level to find the estimators statistically tied for the lowest QLIKE within each regime. Used for forecast accuracy only, not for P&L. |
 | `fleming2001` | bib checked; content checked (abstract) | Judging volatility models by economic value rather than statistical fit. For short-horizon investors, volatility timing beats static portfolios, robust to estimation risk and costs. A useful contrast: there, better volatility information has economic value; for an AS market maker, standard estimators don't. |
 
 **Result to discuss against `patton2011`:** HAR has the lowest QLIKE in every
@@ -115,7 +115,6 @@ decomposition and the sigma-in-the-quotes analysis explain why.
 | `lakens2017` | bib checked; content checked (abstract) | Practical guide to equivalence testing with TOST: reject effects large enough to matter, with bounds set from the smallest effect size of interest. **It recommends prespecifying the bounds.** Ours were not prespecified (the analysis came after the results), so the paper must say so and report the smallest passing bound against an economic benchmark (the Oracle's gain). |
 | `schuirmann1987` | bib checked; content checked (abstract) | The original TOST procedure, from bioequivalence testing; it reaches the same conclusion as checking whether the 1 − 2α confidence interval lies inside the bounds, which is how we compute it. |
 | `hoenigheisey2001` | bib checked; content checked (full text) | "For any test the observed power is a 1:1 function of the p value", so it adds no information. Justifies reporting the minimum detectable effect instead. |
-| `berger1982` | bib checked; content checked (secondary sources only) | Intersection-union tests: when a conclusion requires every one of several tests to reject, each can be run at the full level, with no multiplicity correction. Justifies TOST without Bonferroni for the joint equivalence claim. |
 
 ## 6. Backtesting
 
@@ -164,8 +163,7 @@ was also found, but its citation details weren't confirmed:
 
 ## Before submitting
 
-Every entry's bibliographic details and cited claims are checked. Three rest
+Every entry's bibliographic details and cited claims are checked. Two rest
 on secondary sources only; read the originals before relying on them:
-`berger1982` (the intersection-union principle), `riskmetrics1996` (lambda =
-0.94) and `stoikov2018` (the micro-price). `huangstoll1996`'s realized-spread
+`riskmetrics1996` (lambda = 0.94) and `stoikov2018` (the micro-price). `huangstoll1996`'s realized-spread
 use is confirmed from the abstract; their exact formulas weren't checked.

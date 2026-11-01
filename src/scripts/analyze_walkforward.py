@@ -9,8 +9,8 @@ Prints:
      net of fees, under both fill bounds (RV, chosen variant).
   2. Forecast accuracy (QLIKE) by regime.
   3. The estimator comparison: P&L per unit vol, paired differences vs RV
-     across days within each regime, Model Confidence Set, for each gamma
-     under the chosen fill rule and fee.
+     across days within each regime, for each gamma under the chosen fill
+     rule and fee.
   4. Benchmarks: the estimators between Flat (no intra-hour dynamics) and
      Oracle (perfect foresight of the next 5 minutes' realized vol), with
      OracleHour (the hour's realized vol, held flat) splitting the gap into
@@ -103,13 +103,12 @@ def main():
     for g in sorted(sel["gamma"].unique()):
         u = units(sel[sel["gamma"] == g], args.fee_bps)
         for regime in REGIMES:
-            res, wide = paired(u, "pnl_per_vol", regime)
-            inc = mcs_set(wide, -1.0)
+            res, _ = paired(u, "pnl_per_vol", regime)
             for e in ESTIMATORS:
                 r = res[e]
                 all_rows.append({"gamma": g, "regime": regime, "estimator": e, "days": r["n"],
                                  "ppv_mean": r["mean"], "diff_vs_rv": r["diff"], "se": r["se"], "t": r["t"],
-                                 "days_better": r["better"], "in_mcs": e in inc})
+                                 "days_better": r["better"]})
     summary = pd.DataFrame(all_rows)
     out_csv = WF_DIR / f"summary_{args.variant}_{args.rule}_fee{args.fee_bps:g}{TAG}.csv"
     summary.to_csv(out_csv, index=False, float_format="%.6g")  # %.6g keeps gamma=1e-05 intact
@@ -122,9 +121,8 @@ def main():
             col = []
             for e in ESTIMATORS:
                 r = s[(s["regime"] == regime) & (s["estimator"] == e)].iloc[0]
-                mark = "" if r["in_mcs"] else " (out of MCS)"
                 col.append(f"{r['ppv_mean']:+.2f}" if e == "RV" else
-                           f"{r['diff_vs_rv']:+.2f} t={r['t']:+.1f} {int(r['days_better'])}/{int(r['days'])}{mark}")
+                           f"{r['diff_vs_rv']:+.2f} t={r['t']:+.1f} {int(r['days_better'])}/{int(r['days'])}")
             tab[f"{regime} vol"] = col
         print(pd.DataFrame(tab, index=["RV (level)"] + [f"{e} vs RV" for e in ESTIMATORS[1:]]).to_string())
     print(f"[csv] {out_csv}")
