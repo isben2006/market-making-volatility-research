@@ -164,7 +164,7 @@ def run_event_sim(iv: dict, trades: dict, mark_mid_1s: np.ndarray, sigma_dec: np
                    that decision mid to the end of the H-th second after the
                    fill's second. Includes the move between decision and fill.
       pnl_inv_H    inventory: mid moves on position older than that.
-    spread + as_H is the realized spread (Huang & Stoll 1996) at horizon H."""
+    spread + as_H is the realized spread (Hendershott, Jones & Menkveld 2011) at horizon H."""
     trace = []
     B, n_dec = sigma_dec.shape
     per_sec = 1000 // decision_ms

@@ -20,6 +20,9 @@ from mmvol.config import (  # noqa: F401  (re-exported for the other legacy scri
 from mmvol.data import load_book_1s  # noqa: F401
 from mmvol.plotting import PALETTE, plt
 
+OUT = OUT / "legacy"  # legacy outputs stay apart from the study's
+OUT.mkdir(exist_ok=True)
+
 # ---- guessed AS parameters, before k was calibrated from data ----------------
 GAMMA_NAIVE = 0.1                  # risk aversion, straight from the AS(2008) worked example
 K = 1.5                            # order-flow decay param, also straight from the AS(2008) example

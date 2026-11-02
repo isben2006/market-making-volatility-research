@@ -34,8 +34,8 @@ import pandas as pd
 from scipy import stats
 
 from mmvol.analysis import REGIMES, label_regimes, mcs_set, paired, study_files, units
-from mmvol.config import CLIP_SIZE, ESTIMATORS, MAIN_VARIANT, OUT, SYMBOL
-from mmvol.plotting import EST_COLORS, PALETTE, plt
+from mmvol.config import CLIP_SIZE, ESTIMATORS, MAIN_VARIANT, OUT
+from mmvol.plotting import EST_COLORS, EST_MARKERS, PALETTE, TEXT_WIDTH_IN, gamma_label, plt, save
 
 WF_DIR = OUT / "walkforward_event"
 FEE_SCENARIOS_BPS = [0.0, 2.0]
@@ -127,29 +127,27 @@ def main():
         print(pd.DataFrame(tab, index=["RV (level)"] + [f"{e} vs RV" for e in ESTIMATORS[1:]]).to_string())
     print(f"[csv] {out_csv}")
 
+    # Above 0 = the estimator earns more / loses less than RV. Bars are 95% CIs (t quantiles, as in the tables).
     gammas = sorted(summary["gamma"].unique())
-    fig, axes = plt.subplots(1, len(gammas), figsize=(3.4 * len(gammas), 4.2), sharey=False)
-    for ax, g in zip(np.atleast_1d(axes), gammas):
+    fig, axes = plt.subplots(2, 2, figsize=(TEXT_WIDTH_IN, 4.6), sharey=True)
+    for ax, g in zip(axes.flat, gammas):
         s = summary[summary["gamma"] == g]
-        for i, e in enumerate([e for e in ESTIMATORS if e != "RV"]):
+        for i, e in enumerate(ESTIMATORS[1:]):
             sub = s[s["estimator"] == e].set_index("regime").loc[REGIMES]
             x = np.arange(len(REGIMES)) + (i - 1) * 0.22
-            ax.errorbar(x, sub["diff_vs_rv"], yerr=1.96 * sub["se"], fmt="o", ms=5, capsize=3,
-                        color=EST_COLORS[e], label=e, lw=1.3)
-        ax.axhline(0, color=PALETTE["ink2"], lw=0.9)
+            ci = stats.t.ppf(0.975, sub["days"] - 1) * sub["se"]
+            ax.errorbar(x, sub["diff_vs_rv"], yerr=ci, fmt=EST_MARKERS[e], ms=4.5, capsize=2.5, lw=1.1,
+                        color=EST_COLORS[e], label=e)
+        ax.axhline(0, color=PALETTE["ink2"], lw=0.8, zorder=1.5)
         ax.set_xticks(range(len(REGIMES)))
-        ax.set_xticklabels([f"{r}\nvol" for r in REGIMES])
-        ax.set_title(f"gamma = {g:.0e}", fontsize=10)
-        for spine in ("top", "right"):
-            ax.spines[spine].set_visible(False)
-    np.atleast_1d(axes)[0].set_ylabel("P&L per unit vol minus RV's\n(mean across days, 95% CI)")
-    np.atleast_1d(axes)[0].legend(frameon=False, fontsize=8)
-    fig.suptitle(f"Event-driven walk-forward: estimator vs RV by regime ({SYMBOL}, {args.variant} sigma, "
-                 f"{args.rule} fills, fee {args.fee_bps:g} bps; above 0 = earns more / loses less)", fontsize=10)
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
-    out_png = WF_DIR / f"regime_comparison_{args.variant}_{args.rule}_fee{args.fee_bps:g}{TAG}.png"
-    fig.savefig(out_png, dpi=130)
-    print(f"[plot] {out_png}")
+        ax.set_xticklabels([f"{r} vol" for r in REGIMES])
+        ax.set_title(gamma_label(g))
+    for ax in axes[:, 0]:
+        ax.set_ylabel("P&L per unit vol, minus RV's")
+    handles, labels = axes.flat[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.03))
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
+    save(fig, WF_DIR / f"regime_comparison_{args.variant}_{args.rule}_fee{args.fee_bps:g}{TAG}.png")
 
     if (blocks["variant"] == "benchmark").any():
         benchmark_table(blocks, args.variant, args.rule, args.fee_bps)
@@ -189,28 +187,25 @@ def benchmark_table(blocks: pd.DataFrame, variant: str, rule: str, fee_bps: floa
     out.to_csv(out_csv, index=False, float_format="%.6g")
     print(f"[csv] {out_csv}")
 
+    # Whole days; above 0 = loses less than RV. Bars are 95% CIs (t quantiles, as in the tables).
     gammas = sorted(out["gamma"].unique())
-    fig, axes = plt.subplots(1, len(gammas), figsize=(3.4 * len(gammas), 4.2))
+    fig, axes = plt.subplots(2, 2, figsize=(TEXT_WIDTH_IN, 4.6), sharey=True)
     others = [e for e in names if e != "RV"]
-    for ax, g in zip(np.atleast_1d(axes), gammas):
+    tick = {"OracleHour": "Oracle\nhour"}
+    for ax, g in zip(axes.flat, gammas):
         s = out[(out["gamma"] == g) & (out["regime"] == "all")].set_index("estimator").loc[others]
-        x = np.arange(len(others))
+        ci = stats.t.ppf(0.975, s["days"] - 1) * s["se"]
         for i, e in enumerate(others):
-            ax.errorbar(x[i], s.loc[e, "diff_vs_rv"], yerr=1.96 * s.loc[e, "se"], fmt="o", ms=5, capsize=3,
-                        color=EST_COLORS[e], lw=1.3)
-        ax.axhline(0, color=PALETTE["ink2"], lw=0.9)
-        ax.set_xticks(x)
-        ax.set_xticklabels(others, rotation=45, ha="right")
-        ax.set_title(f"gamma = {g:.0e}", fontsize=10)
-        for spine in ("top", "right"):
-            ax.spines[spine].set_visible(False)
-    np.atleast_1d(axes)[0].set_ylabel("P&L per day minus RV's, USD\n(mean across days, 95% CI)")
-    fig.suptitle(f"Estimators between the benchmarks: Flat (no dynamics) and Oracle (perfect foresight) "
-                 f"({SYMBOL}, {rule} fills, fee {fee_bps:g} bps; above 0 = loses less than RV)", fontsize=10)
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
-    out_png = WF_DIR / f"benchmarks_{variant}_{rule}_fee{fee_bps:g}{TAG}.png"
-    fig.savefig(out_png, dpi=130)
-    print(f"[plot] {out_png}")
+            ax.errorbar(i, s.loc[e, "diff_vs_rv"], yerr=ci[e], fmt=EST_MARKERS[e], ms=4.5, capsize=2.5, lw=1.1,
+                        color=EST_COLORS[e])
+        ax.axhline(0, color=PALETTE["ink2"], lw=0.8, zorder=1.5)
+        ax.set_xticks(range(len(others)))
+        ax.set_xticklabels([tick.get(e, e) for e in others])
+        ax.set_title(gamma_label(g))
+    for ax in axes[:, 0]:
+        ax.set_ylabel("P&L per day minus RV's (USD)")
+    fig.tight_layout()
+    save(fig, WF_DIR / f"benchmarks_{variant}_{rule}_fee{fee_bps:g}{TAG}.png")
 
 
 def _paired_t(d: pd.Series):

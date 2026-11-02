@@ -168,7 +168,7 @@ OracleHour → Oracle is the value of also knowing its timing within the hour.
   - **inventory:** everything else, i.e. price moves on older positions.
 
   This mirrors the effective / realized spread split of the
-  microstructure literature (Huang & Stoll 1996).
+  microstructure literature (Hendershott, Jones & Menkveld 2011).
 - Deterministic, and tested on hand-built fill and decomposition scenarios
   (`src/tests/test_simulator.py`).
 
@@ -631,10 +631,11 @@ data/study_days.csv           the 219 study days
 data/study_days_holdout.csv   the 180 of them added after all design decisions (out-of-sample check)
 data/study_days_41.csv        the earlier 41-day sample (all design decisions were made on it)
 data/data_quality.csv         per-day quote coverage and gaps
+paper/main.tex                LaTeX template for the paper
 paper/references.bib          references for the write-up
 paper/literature_notes.md     what each reference is used for
-output/walkforward_event/     main results: per-day files, summaries, charts
+output/walkforward_event/     main results: per-day files, summaries, charts (PNG + PDF)
 output/robustness_event/      robustness results
-output/signature_plot.png
-output/ (other files)         outputs from the legacy pipeline
+output/signature_plot.png     signature plot (+ .pdf)
+output/legacy/                outputs from the legacy pipeline
 ```

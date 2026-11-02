@@ -1,0 +1,390 @@
+\documentclass[11pt]{article}
+
+% ---- Packages ---------------------------------------------------------------
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}               % equations
+\usepackage{booktabs}              % clean tables: \toprule, \midrule, \bottomrule
+\usepackage{graphicx}              % figures
+\usepackage[authoryear,round]{natbib}  % \citet{key} -> Corsi (2009); \citep{key} -> (Corsi, 2009)
+\usepackage[hidelinks]{hyperref}   % clickable references; load last
+
+\graphicspath{{figures/}}          % upload the PDFs from output/ into a figures/ folder
+
+% ---- Title ------------------------------------------------------------------
+\title{Do Better Volatility Forecasts Improve Avellaneda-Stoikov Market Making?\\
+       Evidence from Bitcoin Perpetual Futures}
+\author{Author Name\\ University}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+% Write last. About 150 words: question, data, method, main result, why it matters.
+\end{abstract}
+
+% ============================================================================
+\section{Introduction}
+\label{sec:intro}
+% Write second to last. The question, why it matters, the answer, the contributions.
+
+% ============================================================================
+\section{Related literature}
+\label{sec:literature}
+% AS and its extensions; volatility forecasting (HAR, GARCH, QLIKE);
+% adverse selection. See paper/literature_notes.md for what each source supports.
+
+% ============================================================================
+\section{Data}
+\label{sec:data}
+The data come from Binance's public market-data archive\footnote{\url{https://data.binance.vision}}
+for the BTCUSDT perpetual futures contract. Two feeds are used. The \texttt{bookTicker} feed records
+every change to the best bid and ask, with millisecond timestamps. From it we build the mid-price,
+$s_t = (b_t + a_t)/2$, where $b_t$ and $a_t$ are the best bid and ask at time $t$. The mid-price drives both the volatility estimators and the market maker's quotes. The
+\texttt{aggTrades} feed records every trade with its price, size and aggressor side. The simulator uses
+these trades to decide when the market maker's quotes are filled (Section~\ref{sec:simulator}).
+
+The archive has two limitations that shape the study. First, it contains only the best bid and ask
+(level~1), with no depth behind them. The simulator therefore cannot know the market maker's place in the
+queue at a price level, so fills are bounded by a conservative and an optimistic rule rather than modeled
+exactly (Section~\ref{sec:simulator}). Second, the futures \texttt{bookTicker} feed is published only from
+16~May~2023 to 30~March~2024. Trades are available over a much longer period, but a market maker cannot
+be simulated without quotes, so this window bounds the study.
+
+\paragraph{Sample.}
+Table~\ref{tab:sample} shows how the sample is built. It starts from every weekday from 17~May~2023 to
+29~March~2024 (228 days); the feed's first day is dropped in case it is partial. Weekends are excluded
+because their trading volume is much lower: including them would mix a change in liquidity into a
+comparison meant to isolate volatility.
+
+Seven days are excluded for broken quote data. The archive has holes: stretches with no quote updates
+while trading continues. During such a gap the simulator's quotes stay at stale prices and are filled by
+trades at prices the real market has already left. On the affected days the market maker built positions
+of up to about 100~BTC, against a quote size of 0.005~BTC. Every day is therefore screened: a day fails if
+it contains a quote gap of 30 seconds or more with trades inside it, or if quotes are missing at the start
+or end of the day. Five days fail the screen, with gaps of 8 to 105 minutes. Two more, whose quote feed
+starts several hours late, were excluded by hand before the screen existed.
+
+Two development days, 19~July~2023 and 10~January~2024, are also excluded. The pipeline was built and its
+settings tuned on them, so keeping them would test the method on the data it was fitted to. This leaves
+219 study days.
+
+\paragraph{Hold-out.}
+Every design decision was made on an earlier sample of 41 days, which included the two development days.
+The 180 study days outside that sample were added only after every decision was final, so they form an
+out-of-sample hold-out (Section~\ref{sec:robustness}).
+
+\begin{table}[ht]
+  \centering
+  \caption{Sample construction.}
+  \label{tab:sample}
+  \begin{tabular}{lr}
+    \toprule
+    Step & Days \\
+    \midrule
+    Weekdays, 17 May 2023 -- 29 March 2024 & 228 \\
+    Excluded: broken quote data & $-7$ \\
+    Excluded: development days & $-2$ \\
+    \midrule
+    Study sample & 219 \\
+    \quad of which out-of-sample hold-out & 180 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ============================================================================
+\section{Method}
+\label{sec:method}
+
+\subsection{Volatility estimators}
+\label{sec:estimators}
+
+We compare four estimators that span the main approaches to short-horizon volatility: a model-free
+measure (realized volatility), exponential smoothing (EWMA), a fitted conditional-variance model
+(GARCH(1,1)) and a regression on realized variances (HAR-RV). All four are built from one-second log
+returns of the mid-price, $r_t = \ln(s_t / s_{t-1})$, where $s_t$ here is the mid-price at the end of
+second $t$ (the last quote update in that second, or the previous second's value if there is none). Each
+estimator produces a per-second variance $h_t$.
+Because the Avellaneda-Stoikov model describes the price in dollars, every estimator's output is
+converted to dollar volatility in the same way, $\sigma_t = s_t\sqrt{h_t}$ (in USD per
+$\sqrt{\text{second}}$), so the estimators differ only in how they estimate $h_t$. All are causal: the
+value in force at time $t$ uses only data observed before $t$, and every refit uses only data before the
+refit time.
+
+\paragraph{Realized volatility (RV).}
+The mean of squared returns over the last $W = 300$ seconds,
+\begin{equation}
+  h_t^{RV} = \frac{1}{W}\sum_{i=0}^{W-1} r_{t-i}^2 .
+  \label{eq:rv}
+\end{equation}
+Realized variance is the standard model-free volatility measure \citep{andersen1998}; in a comparison
+of over 400 realized measures, few significantly beat plain five-minute realized variance
+\citep{lps2015}. It is also how the best-known open-source
+Avellaneda-Stoikov implementation estimates $\sigma$ \citep{hummingbot_instantvol}, which makes it the
+natural baseline. The 300-second window is our choice: it matches the five-minute horizon over which
+the market maker uses $\sigma$ (Section~\ref{sec:as}).
+
+\paragraph{EWMA.}
+The RiskMetrics recursion \citep{riskmetrics1996},
+\begin{equation}
+  h_t^{EWMA} = \lambda h_{t-1}^{EWMA} + (1-\lambda)\, r_t^2 .
+  \label{eq:ewma}
+\end{equation}
+The usual $\lambda = 0.94$ is calibrated for daily returns and has no meaning at one-second sampling.
+We instead set $\lambda$ so that the average age of the data EWMA weights, $\lambda/(1-\lambda)$, equals
+that of RV's window, $(W-1)/2 = 149.5$ seconds, which gives $\lambda \approx 0.9934$. RV and EWMA then
+use equally recent information and differ only in how they weight it.
+
+\paragraph{GARCH(1,1).}
+The conditional variance follows \citet{bollerslev1986},
+\begin{equation}
+  h_t^{G} = \omega + \alpha\, r_{t-1}^2 + \beta\, h_{t-1}^{G} ,
+  \label{eq:garch}
+\end{equation}
+where $\alpha$ measures the response to the latest squared return, $\beta$ the carry-over of the previous
+variance, and $\omega$ pulls the variance toward its long-run level $\omega/(1-\alpha-\beta)$. The model
+captures volatility clustering, and \citet{hansenlunde2005} find it hard to beat among 330 ARCH-type
+models. Parameters are estimated by
+maximum likelihood (zero mean, normal errors) on the trailing three hours of returns and re-estimated
+every hour; between refits the recursion runs every second. Fewer than 1\% of the hourly fits fail to
+converge, in which case the previous fit is kept. The fitted persistence $\alpha + \beta$ has a median
+of 0.98, so a volatility shock decays by half in about 34 seconds. Since EWMA is the special case $\omega = 0$, $\alpha + \beta = 1$, comparing the two tests
+whether fitting the parameters adds anything.
+
+\paragraph{HAR-RV.}
+\citet{corsi2009} forecasts realized variance from its averages over several past horizons. We adapt
+his daily, weekly and monthly components to intraday horizons of 1, 5 and 30 minutes:
+\begin{equation}
+  h_t^{HAR} = \beta_0 + \beta_1 RV_t^{(1\,\text{min})} + \beta_2 RV_t^{(5\,\text{min})}
+              + \beta_3 RV_t^{(30\,\text{min})} ,
+  \label{eq:har}
+\end{equation}
+where $RV_t^{(w)}$ is the mean squared return over the trailing window $w$ and $\beta_0,\dots,\beta_3$
+are regression coefficients. Unlike the other three
+estimators, HAR is fitted directly to the quantity the market maker needs: the mean squared return over
+the next 300 seconds. The coefficients are estimated by non-negative least squares on all of the day
+so far, sampled every 10 seconds, and re-estimated every hour. An expanding window is used because a
+trailing three-hour window holds only about six independent observations of the 30-minute component,
+which produced negative coefficients and negative variance forecasts in development. Forecasts are
+floored at 1\% of the day's mean squared return, a floor that binds for only a few seconds in the whole
+sample. HAR is included because it beats GARCH-type models in Bitcoin volatility forecasting
+\citep{aganin2023,bergsli2022}.
+
+\paragraph{Raw volatility and burn-in.}
+Each estimator's $\sigma_t$ enters the quoting formula unadjusted, so any bias in its level counts as
+part of that estimator's quality. A variant rescaled every hour to the trailing three-hour realized
+variance is reported as a robustness check (Section~\ref{sec:robustness}). The first three hours of each
+day (00:00--03:00 UTC) serve as burn-in for the first fits; performance is scored from 03:00 UTC.
+
+\paragraph{Microstructure noise.}
+At very short sampling intervals, realized volatility is usually biased upward by bid-ask bounce
+\citep{bandirussell2008}. On Binance mid-quotes the opposite happens (Figure~\ref{fig:signature}), consistent with evidence that
+noise in quote data is not simple bid-ask bounce \citep{hansenlunde2006}: on
+a calm day 79\% of one-second returns are exactly zero, and one-second realized volatility sits about
+17\% below its peak at 15--20-second sampling, against about 6\% on a volatile day. Because this bias
+varies with the volatility regime, quantities used to compare hours, such as the regime labels
+(Section~\ref{sec:evaluation}), use 60-second returns instead. The estimators keep one-second returns,
+the sampling a live market maker would use, and their raw output carries this bias, as noted above.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{signature_plot.pdf}
+  \caption{Volatility signature plot for the BTCUSDT mid-price on the two development days: annualized
+  realized volatility at each sampling interval, divided by its value at 300 seconds. Realized volatility
+  is not inflated at short intervals; on the calm day (19 July 2023) it is biased downward instead.}
+  \label{fig:signature}
+\end{figure}
+
+\subsection{The Avellaneda-Stoikov model}
+\label{sec:as}
+
+The market maker quotes with the model of \citet{avellaneda2008}. A risk-averse market maker posts a
+bid and an ask around a \emph{reservation price}, its own valuation of the asset given the inventory it
+holds,
+\begin{equation}
+  r_t = s_t - q_t\, \gamma\, \sigma_t^2\, \tau_t ,
+  \label{eq:reservation}
+\end{equation}
+and sets the total spread between its two quotes to
+\begin{equation}
+  \delta^a_t + \delta^b_t = \gamma\, \sigma_t^2\, \tau_t + \frac{2}{\gamma}\ln\left(1 + \frac{\gamma}{k_t}\right),
+  \label{eq:spread}
+\end{equation}
+placed symmetrically around $r_t$. Here $s_t$ is the mid-price, $q_t$ the signed inventory in BTC,
+$\gamma$ the risk aversion, $\sigma_t$ the volatility from the estimator under test, $\tau_t$ the time
+remaining in the horizon, and $k_t$ the order-flow parameter defined below. The two equations play
+different roles. Inventory enters only the reservation price: a long position lowers $r_t$ below the
+mid, shifting both quotes down so that the market maker sells more readily and sheds risk. The width of
+the spread does not depend on inventory; it has a volatility term, $\gamma\sigma_t^2\tau_t$, and an
+order-flow term set by $k_t$. These closed-form quotes are the approximate solution that
+\citeauthor{avellaneda2008} derive for their model, and they are the form used in practice.
+
+\paragraph{Horizon.}
+The model assumes a finite trading horizon, with $\tau_t$ counting down to its end. We use a horizon of
+300 seconds: $\tau_t$ counts down from 300 to 0 and then restarts. A full trading day would make the
+volatility term unusable. For an illustrative $\sigma_t = \$4$ per $\sqrt{\text{second}}$ and
+$\gamma = 10^{-3}$, that term is about \$5 over 300 seconds but about \$1{,}400 over a day, far wider
+than any quote that would trade. The 300-second horizon also matches the RV window
+(Section~\ref{sec:estimators}).
+
+\paragraph{Order flow.}
+\citet{avellaneda2008} model fills as arriving at rate $\lambda(\delta) = A e^{-k\delta}$, so a quote
+$\delta$ dollars from the mid is filled less often the farther away it is; only $k$ enters the quotes.
+Following their own calibration idea, we estimate $k$ from the data. For each 100-millisecond decision
+window we record how far the market reached from the mid on each side, through a trade or the opposite
+best quote. This gives the rate $\lambda(\delta)$ at which a quote at each distance from \$0.10 to \$12
+would have been reached, and $k$ is minus the slope of a least-squares fit of $\ln\lambda(\delta)$ on
+$\delta$. The fit uses the trailing three hours and is repeated every hour, balancing enough data for a
+stable estimate against adapting to changing conditions. The fits are close ($R^2$ of 0.98 to 0.995), and
+$k$ ranges from about 0.2 per dollar in volatile hours to about 1.2 in calm ones. Fitting $k$ once per
+day or holding it constant are robustness checks (Section~\ref{sec:robustness}).
+
+\paragraph{Risk aversion and order size.}
+The risk aversion $\gamma$ is a preference, not a quantity that can be estimated from data, and choosing
+the best value after seeing the results would be selection on outcomes. Results are therefore reported
+for four values, $\gamma \in \{10^{-5}, 10^{-4}, 10^{-3}, 10^{-2}\}$. Across this range the volatility
+term's share of the spread rises from a few percent to most of it (Section~\ref{sec:results}), which
+governs how much the choice of estimator can matter. Each order is for a fixed 0.005~BTC (about \$120 to
+\$370 over the sample). The simulator assumes the market maker's orders do not move the market, which is
+plausible only for small orders. Inventory is not capped; the reservation price alone controls it.
+
+\subsection{Simulator}
+\label{sec:simulator}
+
+The market maker is simulated on the raw quote and trade events, replayed in time order. Each day is
+simulated independently, starting with zero inventory, and the simulation has no random elements: the
+same inputs always produce the same fills.
+
+\paragraph{Decisions and orders.}
+Every 100 milliseconds the market maker recomputes its quotes from Equations~\eqref{eq:reservation}
+and~\eqref{eq:spread}, using only information available before the decision: the latest mid-price,
+the volatility estimate from the last completed second, the current $k_t$ and its inventory. Quotes are
+rounded to the \$0.10 tick, the bid down and the ask up, and reach the exchange 50 milliseconds later.
+Orders are post-only: a quote that would cross the book when it arrives is rejected rather than executed
+as a taker order. Each quote rests from its arrival until the next quote arrives, and only events in
+that window can fill it.
+
+\paragraph{Fills.}
+With only the best bid and ask available, the market maker's place in the queue at its price level is
+unknown, so fills are bounded by two deterministic rules. Under the \emph{conservative} rule, a quote is
+filled only when the market trades through it: a trade prints at a strictly better price, or the
+opposite best quote moves to or past it. Either event means the whole price level, including our order,
+was taken. The \emph{optimistic} rule also fills a quote from trades exactly at its price, up to their
+size, as if the market maker were first in the queue. Any queue model would fall between the two. All
+fills are at the quote price. A fill through the quote is always for the full 0.005~BTC; a fill from
+trades exactly at the quote price, which only the optimistic rule allows, is for the size of those trades,
+up to 0.005~BTC.
+In practice the two rules give nearly the same results, within 1--2\% in P\&L, because the quotes sit
+a few dollars from the mid, tens of ticks away in a market whose spread is usually a single tick. At that
+distance fills come from trades sweeping through the level rather than from queueing at it.
+
+\paragraph{P\&L and fees.}
+P\&L is cash plus inventory marked to the mid-price at the end of every second. The objective in
+\citet{avellaneda2008} contains no transaction costs, so the quotes do not depend on fees, and neither do
+the fills. Net P\&L is therefore exactly gross P\&L minus the fee rate times the traded notional, and fees
+are applied after the simulation, at 0 and 2 basis points per side (roughly Binance's standard maker
+fee).
+
+\paragraph{Validation.}
+The fill rules and the P\&L decomposition (Section~\ref{sec:benchmarks}) are tested on hand-built
+scenarios with known outcomes: a trade exactly at the quote, a trade through it, the opposite quote
+crossing it and a post-only rejection, each under both rules.
+
+\subsection{Benchmarks and P\&L decomposition}
+\label{sec:benchmarks}
+
+Two additions help explain the comparison: benchmark volatility series that bracket the estimators,
+and a decomposition of each run's P\&L into its sources.
+
+\paragraph{Benchmarks.}
+Three benchmark series run through the same simulator but are not estimators: two of them use future
+data and could not be traded, and all three are kept out of the estimator comparisons and their tests.
+Each is converted to dollars in the same way as the estimators, $\sigma_t = s_t\sqrt{h_t}$.
+\begin{itemize}
+  \item \emph{Flat}: the realized variance of the trailing three hours, updated every hour and held
+    constant within it. It is tradable and carries the volatility level with no dynamics within the hour.
+  \item \emph{OracleHour}: the realized variance of the current clock hour, from that hour's own
+    returns, held constant within it. It knows the hour's true level but not when within the hour
+    volatility arrives.
+  \item \emph{Oracle}: the realized variance of the next 300 seconds, the same target the forecast
+    loss scores against (Section~\ref{sec:evaluation}). It is the perfect volatility forecast for the
+    market maker's horizon.
+\end{itemize}
+The gaps between them separate what volatility information is worth. Flat to OracleHour is the value of
+knowing the hour's level; OracleHour to Oracle is the value of also knowing its timing within the hour.
+Oracle minus RV bounds how much any better volatility forecast could improve on RV within this quoting
+rule.
+
+\paragraph{P\&L decomposition.}
+A market maker earns the spread on each fill but loses when prices move against the inventory it
+takes on, and the loss right after a fill reflects trading with better-informed counterparties, known as
+adverse selection \citep{glostenmilgrom1985}. We decompose P\&L following \citet{hendershott2011}, who
+split the effective spread on each trade into a realized spread, the part the liquidity supplier keeps,
+and a price impact, the part lost to the subsequent move of the quote midpoint. For a fill of $x$ BTC in
+direction $d$ ($+1$ for a buy, $-1$ for a sell) at price $p$, quoted when the mid was $m_0$,
+\begin{align}
+  \text{spread captured} &= x\, d\, (m_0 - p), \label{eq:spread_captured}\\
+  \text{adverse selection} &= x\, d\, (m_H - m_0), \label{eq:adverse_selection}
+\end{align}
+where $m_H$ is the mid at the end of the $H$-th second after the fill. Spread captured is the fill's
+edge over the mid its quote was based on, and is positive unless the inventory skew has pushed the quote
+past the mid. Adverse selection is the mid's move in the fill's direction over the next $H$ seconds, and
+is negative when the price moves against the market maker. Their sum is the realized spread. Spread
+captured corresponds to the effective spread of \citet{hendershott2011} and adverse selection to minus
+their price impact, both seen from the market maker's side.
+
+Three adaptations are ours. The reference is the mid the quote was based on rather than the mid at the
+time of the fill, so price moves during the order's latency count as adverse selection. The horizon is
+$H = 5$ seconds, with 60 seconds as a check, rather than minutes, matching how quickly quotes change in
+this market. And because the decomposition of \citet{hendershott2011} applies to each trade rather than
+to a trader's P\&L, we add a third component: everything else, the price moves on positions held longer
+than $H$ seconds, is the \emph{inventory} component. The three components add up exactly to the P\&L in
+every second; fees are a fourth, separate component. Comparing the components across estimators shows
+whether an estimator changes P\&L through the spread it earns, through how often it is picked off, or
+through the inventory it carries.
+
+\subsection{Evaluation}
+\label{sec:evaluation}
+
+% ============================================================================
+\section{Results}
+\label{sec:results}
+% Economics, forecast accuracy, P&L comparison, power and equivalence,
+% decomposition, sigma's role in the quotes, benchmarks.
+%
+% Figure example (delete or replace):
+% \begin{figure}[ht]
+%   \centering
+%   \includegraphics[width=\textwidth]{regime_comparison_raw_conservative_fee0.pdf}
+%   \caption{...}
+%   \label{fig:regime}
+% \end{figure}
+%
+% Table example (delete or replace):
+% \begin{table}[ht]
+%   \centering
+%   \caption{...}
+%   \label{tab:example}
+%   \begin{tabular}{lrr}
+%     \toprule
+%     Estimator & Column 1 & Column 2 \\
+%     \midrule
+%     RV & 0.00 & 0.00 \\
+%     \bottomrule
+%   \end{tabular}
+% \end{table}
+
+% ============================================================================
+\section{Robustness and out-of-sample evidence}
+\label{sec:robustness}
+
+% ============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% Findings, limitations, future work.
+
+% ---- References -------------------------------------------------------------
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

@@ -78,7 +78,8 @@ project scores standard estimators on market-making outcomes. State it as
 | Key | Status | Use in the paper |
 |---|---|---|
 | `glostenmilgrom1985` | bib checked; content checked (abstract) | The adverse-selection theory of the spread: informed traders cause a positive spread even for a risk-neutral, zero-profit specialist, who recoups losses to the informed from liquidity traders. Motivates the decomposition. |
-| `huangstoll1996` | bib checked; content checked (abstract) | Measures execution costs with quoted, effective and realized spreads; the realized spread is the revenue left to the liquidity supplier after the price moves. Our decomposition follows the same logic: spread captured (effective) = realized spread + adverse selection. Their 1997 *Review of Financial Studies* paper is the formal three-way spread decomposition; cite 1996 for the realized-spread measure. |
+| `huangstoll1996` | NOT CITED in the paper (replaced by `hendershott2011`, whose midpoint-based version the decomposition follows). bib checked; content checked (full text, Sections 6-7, pp. 324-328) | Effective half-spread z_t = abs(p_t - q_t), against the quote midpoint at trade time; realized half-spread over horizon tau = p_{t+tau} - p_t for trades at the bid (times -1 at the ask), where p_{t+tau} is a later TRADE price (first trade 5-10 or 30-35 minutes later); effective minus realized = the loss to informed traders. Our decomposition adapts this: later price = the mid (no bid-ask bounce), reference = the decision-time mid (latency moves count as adverse selection), horizons 5 s and 60 s; the inventory residual is our addition (they decompose the spread, not P&L). The paper states these adaptations. Their 1997 *Review of Financial Studies* paper is the formal three-way spread decomposition; cite 1996 for the realized-spread measure. |
+| `hendershott2011` | bib checked (Crossref); content checked (full text, Section I.B, eqs. 1-4) | Effective half-spread q(p - m_t)/m_t, realized spread q(p - m_{t+5min})/m_t and price impact q(m_{t+5min} - m_t)/m_t, with q = +1 for buyer-initiated trades and m the QUOTE MIDPOINT; identity effective = realized + price impact. Also 30-minute versions. Justifies measuring the later price with the midpoint rather than Huang and Stoll's next trade price. Our spread captured = their effective spread and our adverse selection = minus their price impact, both from the market maker's side. |
 
 ## 3. The estimators
 
@@ -165,5 +166,5 @@ was also found, but its citation details weren't confirmed:
 
 Every entry's bibliographic details and cited claims are checked. Two rest
 on secondary sources only; read the originals before relying on them:
-`riskmetrics1996` (lambda = 0.94) and `stoikov2018` (the micro-price). `huangstoll1996`'s realized-spread
-use is confirmed from the abstract; their exact formulas weren't checked.
+`riskmetrics1996` (lambda = 0.94) and `stoikov2018` (the micro-price). `huangstoll1996`'s formulas
+are now checked against the full text (Sections 6-7).
